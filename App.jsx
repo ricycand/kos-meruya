@@ -2420,25 +2420,7 @@ function MutasiBankKasPage({ settings, saveSettings, payments, expenses, rooms, 
 // ═══════════════════════════════════════════════
 // ERROR BOUNDARY
 // ═══════════════════════════════════════════════
-class ErrorBoundary extends React.Component {
-  constructor(props) { super(props); this.state = {err:null}; }
-  static getDerivedStateFromError(e) { return {err:e}; }
-  render() {
-    if (this.state.err) return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-8">
-        <div className="bg-white rounded-2xl shadow-lg p-8 max-w-lg w-full text-center">
-          <p className="text-4xl mb-4">⚠️</p>
-          <h2 className="text-xl font-black text-slate-800 mb-2">Ada kesalahan di halaman ini</h2>
-          <p className="text-slate-500 text-sm mb-4">{this.state.err?.message}</p>
-          <button onClick={()=>this.setState({err:null})} className="px-4 py-2 bg-blue-600 text-white rounded-xl font-bold text-sm">Kembali</button>
-        </div>
-      </div>
-    );
-    return this.props.children;
-  }
-}
 
-// ═══════════════════════════════════════════════
 export default function App() {
   const [role,        setRole]    = useState(null);
   const [user,        setUser]    = useState(null);
