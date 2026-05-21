@@ -1451,6 +1451,12 @@ function Pengaturan({ user, logAction }) {
   const [form, setForm]         = useState({})
   const [busy, setBusy]         = useState(false)
 
+  // DB Diagnostics state
+  const [dbStatus, setDbStatus]   = useState(null)  // null | loading | results
+  const [dbChecking, setDbChecking] = useState(false)
+  const [seedBusy, setSeedBusy]   = useState(false)
+  const [seedResult, setSeedResult] = useState('')
+
   const load = async () => {
     setLoading(true)
     const [s, u] = await Promise.all([fbGet('km_settings'), fbGet('km_users')])
@@ -1490,6 +1496,122 @@ function Pengaturan({ user, logAction }) {
     load()
   }
 
+  // ── Database Diagnostics ──────────────────────────────────────────────────
+  const checkDatabase = async () => {
+    setDbChecking(true)
+    setDbStatus(null)
+    const paths = ['km_rooms','km_tenants','km_payments','km_expenses','km_invoices','km_mutations','km_logs','km_settings']
+    const results = []
+    for (const p of paths) {
+      try {
+        const res = await fetch(`${DB}/${p}.json`)
+        const text = await res.text()
+        if (text === 'null' || text === '') {
+          results.push({ path:p, count:0, status:'empty', sample:'' })
+        } else {
+          const data = JSON.parse(text)
+          if (typeof data === 'object' && data !== null) {
+            const keys = Object.keys(data)
+            const sample = JSON.stringify(Object.values(data)[0]).slice(0,80)
+            results.push({ path:p, count:keys.length, status:'ok', sample })
+          } else {
+            results.push({ path:p, count:1, status:'ok', sample:String(data).slice(0,80) })
+          }
+        }
+      } catch(e) {
+        results.push({ path:p, count:0, status:'error', sample:e.message })
+      }
+    }
+    setDbStatus(results)
+    setDbChecking(false)
+  }
+
+  // ── Data Seeder — restore baseline data ──────────────────────────────────
+  const seedData = async () => {
+    if (!confirm('Ini akan MENAMBAHKAN data contoh ke Firebase (tidak menghapus data yang ada). Lanjutkan?')) return
+    setSeedBusy(true)
+    setSeedResult('')
+    const results = []
+
+    try {
+      // Seed rooms if empty
+      const existingRooms = await fbGet('km_rooms')
+      if (!existingRooms || Object.keys(existingRooms).length === 0) {
+        const rooms = {}
+        const floors = [{f:1,c:12},{f:2,c:12},{f:3,c:12},{f:4,c:6}]
+        floors.forEach(({f,c})=>{
+          for(let i=1;i<=c;i++){
+            const no = `K-${f}${String(i).padStart(2,'0')}`
+            const key = `K_${f}${String(i).padStart(2,'0')}`
+            rooms[key] = { no, floor:f, status:'kosong', price:1500000, type:'Standar' }
+          }
+        })
+        await fbSet('km_rooms', rooms)
+        results.push('✅ 42 kamar berhasil dibuat')
+      } else {
+        results.push(`⏭️ Kamar sudah ada (${Object.keys(existingRooms).length} kamar)`)
+      }
+
+      // Seed tenant Anto
+      const existingTenants = await fbGet('km_tenants')
+      const tenantList = existingTenants ? Object.values(existingTenants) : []
+      const antoExists = tenantList.some(t=>t.name==='Anto')
+      if (!antoExists) {
+        const tenantId = await fbPush('km_tenants', {
+          name:'Anto', room:'K-201', phone:'081283020335',
+          dueDate:'21', startDate:'2026-01-01',
+          rent:1000000, deposit:1000000, status:'aktif',
+          notes:'Penyewa lama', createdAt:nowTs()
+        })
+        // Update room K_201 status
+        await fbPatch('km_rooms/K_201', { status:'isi', tenantId })
+        results.push('✅ Penyewa Anto (K-201) berhasil ditambahkan')
+      } else {
+        results.push('⏭️ Penyewa Anto sudah ada')
+      }
+
+      // Seed payment
+      const existingPay = await fbGet('km_payments')
+      const payList = existingPay ? Object.values(existingPay) : []
+      const payExists = payList.some(p=>p.tenantName==='Anto' && p.month==='2026-05')
+      if (!payExists) {
+        await fbPush('km_payments', {
+          tenantId:'', tenantName:'Anto', tenantRoom:'K-201',
+          month:'2026-05', amount:1000000, date:'2026-05-01',
+          type:'sewa', status:'lunas', createdAt:nowTs(), notes:'Seed data'
+        })
+        results.push('✅ Pembayaran Anto Mei 2026 berhasil ditambahkan')
+      } else {
+        results.push('⏭️ Pembayaran Anto Mei 2026 sudah ada')
+      }
+
+      // Seed expenses
+      const existingExp = await fbGet('km_expenses')
+      const expList = existingExp ? Object.values(existingExp) : []
+      if (expList.length === 0) {
+        await fbPush('km_expenses', {
+          desc:'Tagihan Air', amount:150000, date:'2026-05-01',
+          category:'utilitas', source:'kas', status:'approved',
+          createdBy:'Admin', createdAt:nowTs()
+        })
+        await fbPush('km_expenses', {
+          desc:'Plafon bocor', amount:250000, date:'2026-05-10',
+          category:'perawatan', source:'kas', status:'approved',
+          createdBy:'Admin', createdAt:nowTs()
+        })
+        results.push('✅ 2 pengeluaran (Air + Plafon) berhasil ditambahkan')
+      } else {
+        results.push(`⏭️ Pengeluaran sudah ada (${expList.length} data)`)
+      }
+
+      await logAction('Seed Database', results.join(' | '))
+      setSeedResult(results.join('\n'))
+    } catch(e) {
+      setSeedResult('❌ Error: ' + e.message)
+    }
+    setSeedBusy(false)
+  }
+
   if (loading) return <div className="flex items-center justify-center h-40 text-gray-500">Memuat...</div>
 
   return (
@@ -1508,19 +1630,72 @@ function Pengaturan({ user, logAction }) {
         </div>
       </div>
 
+      {/* ── DATABASE DIAGNOSTICS ── */}
+      <div className="bg-white rounded-xl border p-4">
+        <h3 className="font-semibold text-gray-800 mb-1">🔍 Cek Database Firebase</h3>
+        <p className="text-xs text-gray-500 mb-3">Cek koneksi dan isi setiap tabel di Firebase Realtime Database</p>
+        <div className="flex gap-2 mb-4">
+          <Btn onClick={checkDatabase} disabled={dbChecking} variant="ghost">
+            {dbChecking ? '⏳ Mengecek...' : '🔍 Cek Sekarang'}
+          </Btn>
+        </div>
+        {dbStatus && (
+          <div className="space-y-2">
+            {dbStatus.map(r=>(
+              <div key={r.path} className={`flex items-start justify-between rounded-lg px-3 py-2.5 text-sm ${
+                r.status==='error'?'bg-red-50 border border-red-200':
+                r.count===0?'bg-yellow-50 border border-yellow-200':
+                'bg-green-50 border border-green-200'
+              }`}>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-bold text-gray-700">{r.path}</span>
+                    <Badge color={r.status==='error'?'red':r.count===0?'yellow':'green'}>
+                      {r.status==='error'?'ERROR':r.count===0?'KOSONG':`${r.count} records`}
+                    </Badge>
+                  </div>
+                  {r.sample && <p className="text-xs text-gray-500 mt-0.5 font-mono truncate max-w-sm">{r.sample}</p>}
+                </div>
+              </div>
+            ))}
+            {/* Summary */}
+            <div className="pt-2 border-t text-sm text-gray-600">
+              {dbStatus.every(r=>r.status==='error') ? (
+                <p className="text-red-600 font-medium">❌ Semua path error — kemungkinan Firebase Rules memblokir akses. Cek di Firebase Console → Realtime Database → Rules.</p>
+              ) : dbStatus.filter(r=>r.count===0 && r.status!=='error').length > 3 ? (
+                <p className="text-yellow-700">⚠️ Banyak tabel kosong — klik "Restore Data Awal" di bawah untuk mengisi data contoh.</p>
+              ) : (
+                <p className="text-green-700">✅ Database dapat diakses. Kalau data tidak muncul, cek filter bulan di halaman masing-masing.</p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── DATA SEEDER ── */}
+      <div className="bg-white rounded-xl border p-4">
+        <h3 className="font-semibold text-gray-800 mb-1">🌱 Restore / Seed Data Awal</h3>
+        <p className="text-xs text-gray-500 mb-3">Menambahkan data contoh (42 kamar, penyewa Anto, pembayaran, pengeluaran). Tidak menghapus data yang sudah ada.</p>
+        <Btn onClick={seedData} disabled={seedBusy} variant="warning">
+          {seedBusy ? '⏳ Memproses...' : '🌱 Restore Data Awal'}
+        </Btn>
+        {seedResult && (
+          <div className="mt-3 bg-gray-50 border rounded-lg p-3">
+            <pre className="text-xs text-gray-700 whitespace-pre-wrap font-mono">{seedResult}</pre>
+          </div>
+        )}
+      </div>
+
       {/* User Management */}
       <div className="bg-white rounded-xl border p-4">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-gray-800">Kelola Pengguna (Firebase)</h3>
           <Btn size="sm" onClick={openAddUser}>+ Tambah</Btn>
         </div>
-
-        {/* Static users info */}
         <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
           <p className="font-medium mb-1">👥 User Default (hardcoded):</p>
           <p>admin/1234 · ricy/1111 · arief/2222 · ferry/3333 · staff/0000</p>
         </div>
-
         {users.length > 0 && (
           <table className="w-full text-sm">
             <thead className="border-b text-gray-600">
