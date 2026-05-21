@@ -1,15 +1,20 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import {
   Home, Grid, Users, CreditCard, Wallet, BarChart2, Settings,
   List, LogOut, Plus, Edit, Trash2, Check, X, AlertTriangle,
   Download, Eye, EyeOff, ChevronLeft, Bell, Search,
-  Building, Menu, RefreshCw, CheckCircle, Clock, Shield, FileText, Link2
+  Building, Menu, RefreshCw, CheckCircle, Clock, Shield, FileText, Link2, TrendingUp
 } from "lucide-react";
 
-// ═══════════════════════════════════════════════
-// CONSTANTS & HELPERS
-// ═══════════════════════════════════════════════
-const SK = { S:"km-settings", R:"km-rooms", T:"km-tenants", P:"km-payments", E:"km-expenses", A:"km-audit", K:"km-kas" };
+const FB="https://kos-meruya-default-rtdb.asia-southeast1.firebasedatabase.app";
+const toKey=(k)=>k.replace(/-/g,"_");
+const store={
+  get:async(k)=>{try{const r=await fetch(`${FB}/${toKey(k)}.json`);if(!r.ok)return null;const d=await r.json();if(d===null)return null;return typeof d==="string"?JSON.parse(d):d;}catch{return null;}},
+  set:async(k,v)=>{try{const r=await fetch(`${FB}/${toKey(k)}.json`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(JSON.stringify(v))});return r.ok;}catch{return false;}}
+};
+
+const SK={S:"km-settings",R:"km-rooms",T:"km-tenants",P:"km-payments",E:"km-expenses",A:"km-audit",K:"km-kas"};
+
 const DEF_USERS=[{id:"admin",nama:"Ricy Candra",role:"admin",password:"1234"},{id:"ricy",nama:"Ricy Candra",role:"investor",password:"1111"},{id:"arief",nama:"Arief Wahyudi",role:"investor",password:"2222"},{id:"ferry",nama:"Ferry Lukas",role:"investor",password:"3333"},{id:"staff",nama:"Karyawan Operasional",role:"staff",password:"0000"}];
 
 const DEF = {
@@ -32,31 +37,35 @@ const months6 = () => Array.from({length:6},(_,i)=>{ const d=new Date(); d.setMo
 // ═══════════════════════════════════════════════
 // STORAGE — robust personal storage with retry
 // ═══════════════════════════════════════════════
-const FB="https://kos-meruya-default-rtdb.asia-southeast1.firebasedatabase.app";
-const toKey=(k)=>k.replace(/-/g,"_");
-const store={
-  get:async(k)=>{
-    try{
-      const r=await fetch(`${FB}/${toKey(k)}.json`);
-      if(!r.ok)return null;
-      const d=await r.json();
-      if(d===null||d===undefined)return null;
-      // Data stored as JSON string by old SDK
-      return typeof d==="string"?JSON.parse(d):d;
-    }catch(e){console.error("GET",k,e);return null;}
+const store = {
+  get: async (k) => {
+    for (let i=0; i<3; i++) {
+      try {
+        const r = await store.get(k);
+        if (r && r.value !== undefined) return JSON.parse(r.value);
+        return null;
+      } catch (e) {
+        if (i===2) return null;
+        await new Promise(res=>setTimeout(res,200));
+      }
+    }
+    return null;
   },
-  set:async(k,v)=>{
-    try{
-      const r=await fetch(`${FB}/${toKey(k)}.json`,{
-        method:"PUT",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify(JSON.stringify(v))
-      });
-      return r.ok;
-    }catch(e){console.error("SET",k,e);return false;}
+  set: async (k,v) => {
+    for (let i=0; i<3; i++) {
+      try {
+        await store.set(k, JSON.stringify(v));
+        // Verify write succeeded
+        const check = await store.get(k);
+        if (check && check.value !== undefined) return true;
+      } catch(e) {
+        if (i===2) { console.error("STORAGE WRITE FAILED:", k, e); return false; }
+        await new Promise(res=>setTimeout(res,300));
+      }
+    }
+    return false;
   }
 };
-
 const mkRooms = (n=42) => Array.from({length:n},(_,i)=>({
   id:uid(), nomor:String(i+1).padStart(2,"0"),
   lantai:i<12?1:i<24?2:i<36?3:4,
@@ -124,34 +133,41 @@ function Badge({ status }) {
 // LOGIN
 // ═══════════════════════════════════════════════
 function LoginScreen({ settings, users, onLogin }) {
-  const [uid,setUid]=useState(""); const [pwd,setPwd]=useState(""); const [show,setShow]=useState(false); const [err,setErr]=useState("");
+  const [uid,setUid]=useState(""); const [pwd,setPwd]=useState("");
+  const [show,setShow]=useState(false); const [err,setErr]=useState("");
   const nm=settings?.companyInfo?.name||"Kos Meruya";
-  const doLogin=()=>{
+  const go=()=>{
     if(!uid||!pwd)return setErr("ID dan password wajib diisi");
     const u=(users||DEF_USERS).find(x=>x.id.toLowerCase()===uid.toLowerCase()&&x.password===pwd);
-    if(!u){setErr("ID atau password salah");return;}
+    if(!u)return setErr("ID atau password salah");
     onLogin(u);
   };
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 flex items-center justify-center p-4">
-      <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl w-full max-w-sm p-8 shadow-2xl">
-        <div className="text-center mb-8">
-          <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4"><Building size={36} className="text-white"/></div>
-          <h1 className="text-3xl font-black text-white">{nm}</h1>
-          <p className="text-blue-200/70 text-sm mt-1">Sistem Manajemen Properti</p>
+    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#0f172a,#1e3a5f)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div style={{background:"rgba(255,255,255,0.1)",backdropFilter:"blur(20px)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:24,width:"100%",maxWidth:380,padding:32}}>
+        <div style={{textAlign:"center",marginBottom:32}}>
+          <div style={{width:72,height:72,background:"linear-gradient(135deg,#3b82f6,#6366f1)",borderRadius:16,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}><Building size={32} color="white"/></div>
+          <h1 style={{color:"white",fontSize:28,fontWeight:900,margin:0}}>{nm}</h1>
+          <p style={{color:"rgba(147,197,253,0.7)",fontSize:14,marginTop:4}}>Sistem Manajemen Properti</p>
         </div>
-        <div className="space-y-4">
-          <div><label className="text-white/60 text-xs font-bold uppercase tracking-widest block mb-2">ID Pengguna</label>
-            <input value={uid} onChange={e=>setUid(e.target.value)} onKeyDown={e=>e.key==="Enter"&&doLogin()} placeholder="Masukkan ID"
-              className="w-full bg-white/10 border border-white/20 rounded-2xl px-4 py-3 text-white placeholder-white/30 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"/></div>
-          <div><label className="text-white/60 text-xs font-bold uppercase tracking-widest block mb-2">Password</label>
-            <div className="relative">
-              <input type={show?"text":"password"} value={pwd} onChange={e=>setPwd(e.target.value)} onKeyDown={e=>e.key==="Enter"&&doLogin()} placeholder="Masukkan password"
-                className="w-full bg-white/10 border border-white/20 rounded-2xl px-4 py-3 text-white placeholder-white/30 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 pr-12"/>
-              <button onClick={()=>setShow(!show)} className="absolute right-4 top-3.5 text-white/40 hover:text-white/70">{show?<EyeOff size={16}/>:<Eye size={16}/>}</button>
-            </div></div>
-          {err&&<p className="text-red-400 text-sm text-center">{err}</p>}
-          <button onClick={doLogin} className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-bold py-3.5 rounded-2xl hover:from-blue-600 hover:to-indigo-700 transition-all text-sm">Masuk →</button>
+        <div style={{display:"flex",flexDirection:"column",gap:16}}>
+          <div>
+            <label style={{color:"rgba(255,255,255,0.6)",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:2,display:"block",marginBottom:8}}>ID Pengguna</label>
+            <input value={uid} onChange={e=>setUid(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()} placeholder="Masukkan ID"
+              style={{width:"100%",background:"rgba(255,255,255,0.1)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:12,padding:"12px 16px",color:"white",fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+          </div>
+          <div style={{position:"relative"}}>
+            <label style={{color:"rgba(255,255,255,0.6)",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:2,display:"block",marginBottom:8}}>Password</label>
+            <input type={show?"text":"password"} value={pwd} onChange={e=>setPwd(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()} placeholder="Masukkan password"
+              style={{width:"100%",background:"rgba(255,255,255,0.1)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:12,padding:"12px 48px 12px 16px",color:"white",fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+            <button onClick={()=>setShow(!show)} style={{position:"absolute",right:12,bottom:10,background:"none",border:"none",cursor:"pointer",color:"rgba(255,255,255,0.4)",padding:4}}>
+              {show?<EyeOff size={16}/>:<Eye size={16}/>}
+            </button>
+          </div>
+          {err&&<p style={{color:"#f87171",fontSize:13,textAlign:"center",margin:0}}>{err}</p>}
+          <button onClick={go} style={{background:"linear-gradient(135deg,#3b82f6,#6366f1)",color:"white",border:"none",borderRadius:12,padding:"14px",fontSize:14,fontWeight:700,cursor:"pointer",width:"100%"}}>
+            Masuk →
+          </button>
         </div>
       </div>
     </div>
@@ -166,8 +182,6 @@ function Layout({ children, page, setPage, role, user, onLogout, expenses, open,
     { id:"payments",  icon:CreditCard,label:"Pembayaran",      roles:["admin","investor","staff"] },
     { id:"expenses",  icon:Wallet,    label:"Kas & Keluar",    roles:["admin","investor","staff"] },
     { id:"invoices",  icon:FileText,  label:"Invoice",         roles:["admin","investor","staff"] },
-    { id:"status",    icon:CheckCircle,label:"Status Bayar",   roles:["admin","investor","staff"] },
-    { id:"mutasi",    icon:TrendingUp, label:"Mutasi Bank",    roles:["admin","investor"] },
     { id:"reports",   icon:BarChart2, label:"Laporan",         roles:["admin","investor"] },
     { id:"settings",  icon:Settings,  label:"Pengaturan",      roles:["admin"] },
     { id:"audit",     icon:List,      label:"Log Aktivitas",   roles:["admin","investor"] },
@@ -354,44 +368,6 @@ function Dashboard({ role, user, rooms, tenants, payments, expenses, settings, s
           })}
         </Card>
       )}
-
-      {(()=>{
-        const next7=tenants.filter(t=>{
-          if(!t.aktif||!t.jatuhTempo)return false;
-          const paid=payments.some(p=>p.penyewaId===t.id&&p.periode===cm);
-          if(paid)return false;
-          const due=new Date(today.getFullYear(),today.getMonth(),t.jatuhTempo);
-          const diff=(due-today)/(1000*60*60*24);
-          return diff>=0&&diff<=7;
-        });
-        if(!next7.length)return null;
-        return (
-          <Card className="p-6 border-l-4 border-blue-400">
-            <div className="flex items-center gap-2 mb-3">
-              <Bell size={20} className="text-blue-500"/>
-              <h2 className="font-black text-slate-900">🔔 {next7.length} Penyewa Jatuh Tempo 7 Hari ke Depan</h2>
-            </div>
-            {next7.map(t=>{
-              const room=rooms.find(r=>r.id===t.kamarId);
-              const due=new Date(today.getFullYear(),today.getMonth(),t.jatuhTempo);
-              const sisa=Math.ceil((due-today)/(1000*60*60*24));
-              const waMsg="Halo "+t.nama+", tagihan sewa Kamar "+(room?.nomor||"?")+" jatuh tempo tgl "+t.jatuhTempo+". Mohon segera bayar. Terima kasih.";
-              return (
-                <div key={t.id} className="flex items-center justify-between py-3 border-b border-slate-100 last:border-0 gap-3">
-                  <div>
-                    <p className="text-sm font-bold text-slate-800">{t.nama}</p>
-                    <p className="text-xs text-slate-400">Kamar {room?.nomor} · <span className="font-bold text-blue-600">{sisa===0?"Hari ini!":sisa+" hari lagi"}</span></p>
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={()=>{navigator.clipboard.writeText(waMsg).catch(()=>{});alert("Tersalin!");}} className="px-3 py-1.5 bg-green-600 text-white text-xs font-bold rounded-xl">WA</button>
-                    <button onClick={()=>setPage("invoices")} className="px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-xl">Invoice</button>
-                  </div>
-                </div>
-              );
-            })}
-          </Card>
-        );
-      })()}
     </div>
   );
 }
@@ -742,11 +718,13 @@ function PaymentsPage({ role, user, rooms, tenants, payments, savePayments, addA
         {isEdit&&<Btn onClick={openAdd}><Plus size={16}/>Input Pembayaran</Btn>}
       </div>
 
-      <div className="flex items-center gap-3">
-        <label className="text-sm font-bold text-slate-600">Periode:</label>
-        <select value={fMonth} onChange={e=>setFMonth(e.target.value)} className={inp+" w-44"}>
-          {ms.map(m=><option key={m} value={m}>{mLbl(m)}</option>)}
-        </select>
+      <div className="flex gap-2 flex-wrap">
+        {ms.map(m=>(
+          <button key={m} onClick={()=>setFMonth(m)}
+            className={`px-4 py-1.5 rounded-xl text-sm font-semibold transition-all ${fMonth===m?"bg-blue-600 text-white shadow-sm":"bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+            {mLbl(m)}
+          </button>
+        ))}
       </div>
 
       <Card>
@@ -878,11 +856,13 @@ function ExpensesPage({ role, user, expenses, saveExpenses, addAudit }) {
         {isEdit&&<Btn onClick={openAdd}><Plus size={16}/>Input Pengeluaran</Btn>}
       </div>
 
-      <div className="flex items-center gap-3">
-        <label className="text-sm font-bold text-slate-600">Periode:</label>
-        <select value={fMonth} onChange={e=>setFMonth(e.target.value)} className={inp+" w-44"}>
-          {ms.map(m=><option key={m} value={m}>{mLbl(m)}</option>)}
-        </select>
+      <div className="flex gap-2 flex-wrap">
+        {ms.map(m=>(
+          <button key={m} onClick={()=>setFMonth(m)}
+            className={`px-4 py-1.5 rounded-xl text-sm font-semibold transition-all ${fMonth===m?"bg-blue-600 text-white shadow-sm":"bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+            {mLbl(m)}
+          </button>
+        ))}
       </div>
 
       <Card>
@@ -944,11 +924,6 @@ function ExpensesPage({ role, user, expenses, saveExpenses, addAudit }) {
               <div><label className="text-xs font-bold text-slate-600 block mb-1">Tanggal</label>
                 <input type="date" className={inp} value={form.tanggal||""} onChange={e=>setForm({...form,tanggal:e.target.value})}/></div>
             </div>
-            <div><label className="text-xs font-bold text-slate-600 block mb-1">💰 Bayar dari</label>
-              <select className={inp} value={form.sumber||"kas"} onChange={e=>setForm({...form,sumber:e.target.value})}>
-                <option value="kas">💵 Kas (tunai operasional)</option>
-                <option value="bank">🏦 Bank (transfer rekening)</option>
-              </select></div>
             <div className="flex gap-2 justify-end pt-2">
               <Btn v="secondary" onClick={()=>setModal(false)}>Batal</Btn>
               <Btn onClick={save}>Simpan</Btn>
@@ -963,7 +938,7 @@ function ExpensesPage({ role, user, expenses, saveExpenses, addAudit }) {
 // ═══════════════════════════════════════════════
 // REPORTS PAGE
 // ═══════════════════════════════════════════════
-function ReportsPage({ rooms, tenants, payments, expenses, settings, audit }) {
+function ReportsPage({ rooms, tenants, payments, expenses, settings }) {
   const [month, setMonth] = useState(tMon());
   const ms = months6().concat(Array.from({length:6},(_,i)=>{ const d=new Date(); d.setMonth(d.getMonth()-6-i); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; }));
 
@@ -1021,11 +996,13 @@ function ReportsPage({ rooms, tenants, payments, expenses, settings, audit }) {
         <Btn v="secondary" onClick={doPrint}><Download size={16}/>Export / Cetak PDF</Btn>
       </div>
 
-      <div className="flex items-center gap-3">
-        <label className="text-sm font-bold text-slate-600">Periode Laporan:</label>
-        <select value={month} onChange={e=>setMonth(e.target.value)} className={inp+" w-44"}>
-          {ms.slice(0,12).map(m=><option key={m} value={m}>{mLbl(m)}</option>)}
-        </select>
+      <div className="flex gap-2 flex-wrap">
+        {ms.slice(0,12).map(m=>(
+          <button key={m} onClick={()=>setMonth(m)}
+            className={`px-4 py-1.5 rounded-xl text-sm font-semibold transition-all ${month===m?"bg-blue-600 text-white shadow-sm":"bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+            {mLbl(m)}
+          </button>
+        ))}
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1394,32 +1371,6 @@ function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, 
         <Btn onClick={doSave} size="lg">Simpan Semua Perubahan</Btn>
         {saved&&<span className="text-emerald-600 font-black">✓ Tersimpan!</span>}
       </div>
-
-      {/* USER MANAGEMENT */}
-      <Card className="p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2"><Shield size={18} className="text-blue-600"/><h2 className="font-black text-slate-900">Kelola Pengguna</h2></div>
-          <Btn v="secondary" size="sm" onClick={()=>{
-            const id=prompt("ID Pengguna (huruf kecil, tanpa spasi):");
-            if(!id)return;
-            if((users||[]).find(u=>u.id===id)){alert("ID sudah ada!");return;}
-            const nama=prompt("Nama lengkap:");if(!nama)return;
-            const role=prompt("Role (admin/investor/staff):");
-            if(!["admin","investor","staff"].includes(role)){alert("Role tidak valid!");return;}
-            const pwd=prompt("Password:");if(!pwd)return;
-            saveUsers([...(users||[]),{id,nama,role,password:pwd}]);
-          }}><Plus size={14}/>Tambah</Btn>
-        </div>
-        <div className="space-y-2">
-          {(users||DEF_USERS).map(u=>(
-            <div key={u.id} className="flex items-center gap-3 bg-slate-50 rounded-xl p-3">
-              <div className="flex-1"><span className="font-black text-slate-800 text-sm">{u.id}</span><span className="text-slate-400 text-xs ml-2">· {u.nama} · {u.role}</span></div>
-              <button onClick={()=>{const pwd=prompt(`Password baru untuk ${u.id}:`);if(!pwd)return;saveUsers((users||[]).map(x=>x.id===u.id?{...x,password:pwd}:x));}} className="text-xs px-2.5 py-1 bg-blue-50 text-blue-600 rounded-lg font-bold">Ganti PW</button>
-              {u.id!==user&&<button onClick={()=>{if(!confirm(`Hapus ${u.id}?`))return;saveUsers((users||[]).filter(x=>x.id!==u.id));}} className="text-xs px-2.5 py-1 bg-red-50 text-red-500 rounded-lg font-bold">Hapus</button>}
-            </div>
-          ))}
-        </div>
-      </Card>
 
       {/* RESET DATA */}
       <Card className="p-6 border-2 border-red-100">
@@ -1996,224 +1947,170 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
 }
 
 
-// ═══════════════════════════════════════════════
-// STATUS BAYAR PAGE
-// ═══════════════════════════════════════════════
 function StatusBayarPage({ rooms, tenants, payments }) {
-  const [fMonth, setFMonth] = useState(tMon());
-  const [search, setSearch] = useState("");
-  const ms = Array.from({length:12},(_,i)=>{const d=new Date();d.setMonth(d.getMonth()-i);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;});
-  const today = new Date();
-  const active = tenants.filter(t=>t.aktif);
-  const filtered = active.filter(t=>!search||t.nama?.toLowerCase().includes(search.toLowerCase()));
-
-  const getStatus = (t) => {
+  const [fMonth,setFMonth]=useState(new Date().toISOString().slice(0,7));
+  const [search,setSearch]=useState("");
+  const ms=Array.from({length:12},(_,i)=>{const d=new Date();d.setMonth(d.getMonth()-i);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;});
+  const today=new Date();
+  const active=tenants.filter(t=>t.aktif);
+  const fil=active.filter(t=>!search||t.nama?.toLowerCase().includes(search.toLowerCase()));
+  const getSt=(t)=>{
     const paid=payments.find(p=>p.penyewaId===t.id&&p.periode===fMonth);
-    if(paid)return{st:"lunas",nominal:paid.nominal};
-    const [y,m]=fMonth.split("-").map(Number);
-    const isCur=y===today.getFullYear()&&m===today.getMonth()+1;
-    if(isCur&&t.jatuhTempo){const due=new Date(y,m-1,t.jatuhTempo);return{st:today>due?"telat":"belum",nominal:0};}
-    return{st:"telat",nominal:0};
+    if(paid)return{st:"lunas",nom:paid.nominal};
+    const[y,m]=fMonth.split("-").map(Number);
+    if(y===today.getFullYear()&&m===today.getMonth()+1&&t.jatuhTempo){
+      return{st:new Date(y,m-1,t.jatuhTempo)<today?"telat":"belum",nom:0};
+    }
+    return{st:"telat",nom:0};
   };
   const stats={lunas:0,belum:0,telat:0};
-  active.forEach(t=>{const{st}=getStatus(t);stats[st]=(stats[st]||0)+1;});
-
+  active.forEach(t=>{const{st}=getSt(t);stats[st]=(stats[st]||0)+1;});
+  const inp="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
   return (
     <div className="space-y-5">
-      <div><h1 className="text-2xl font-black text-slate-900">Status Pembayaran</h1>
-        <p className="text-slate-400 text-sm">Pantau status bayar semua penyewa</p></div>
+      <div><h1 className="text-2xl font-black text-slate-900">Status Pembayaran</h1></div>
       <div className="flex items-center gap-3">
         <label className="text-sm font-bold text-slate-600">Bulan:</label>
         <select value={fMonth} onChange={e=>setFMonth(e.target.value)} className={inp+" w-44"}>
-          {ms.map(m=><option key={m} value={m}>{mLbl(m)}</option>)}
+          {ms.map(m=><option key={m} value={m}>{new Date(m+"-01").toLocaleDateString("id-ID",{month:"long",year:"numeric"})}</option>)}
         </select>
       </div>
       <div className="grid grid-cols-3 gap-4">
-        {[{l:"Sudah Lunas",v:stats.lunas,c:"emerald"},{l:"Belum Bayar",v:stats.belum,c:"amber"},{l:"Terlambat",v:stats.telat,c:"red"}].map(s=>(
-          <Card key={s.l} className="p-4 text-center">
-            <p className={`text-3xl font-black text-${s.c}-600`}>{s.v}</p>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">{s.l}</p>
-          </Card>
+        {[["Sudah Lunas",stats.lunas,"text-emerald-600"],["Belum Bayar",stats.belum,"text-amber-600"],["Terlambat",stats.telat,"text-red-600"]].map(([l,v,c])=>(
+          <div key={l} className="bg-white rounded-2xl border border-slate-100 p-4 text-center shadow-sm">
+            <p className={`text-3xl font-black ${c}`}>{v}</p>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">{l}</p>
+          </div>
         ))}
       </div>
       <div className="relative"><Search size={15} className="absolute left-4 top-3 text-slate-400"/>
-        <input className={inp+" pl-10"} placeholder="Cari nama penyewa..." value={search} onChange={e=>setSearch(e.target.value)}/></div>
-      <Card><div className="overflow-x-auto"><table className="w-full text-sm">
-        <thead><tr className="border-b border-slate-100">
-          {["Kamar","Nama","No HP","JT",`Status ${mLbl(fMonth)}`,"Nominal"].map(h=>(
-            <th key={h} className="text-left px-5 py-3.5 text-xs font-bold text-slate-400 uppercase tracking-widest">{h}</th>
-          ))}</tr></thead>
-        <tbody>
-          {filtered.length===0&&<tr><td colSpan={6} className="text-center py-10 text-slate-400">Tidak ada penyewa aktif</td></tr>}
-          {filtered.map(t=>{
-            const room=rooms.find(r=>r.id===t.kamarId);
-            const{st,nominal}=getStatus(t);
-            return(
-              <tr key={t.id} className="border-b border-slate-50 hover:bg-slate-50/80">
-                <td className="px-5 py-3.5 font-black text-blue-600">K-{room?.nomor||"?"}</td>
-                <td className="px-5 py-3.5 font-bold text-slate-800">{t.nama}</td>
-                <td className="px-5 py-3.5 text-slate-500 text-xs">{t.hp}</td>
-                <td className="px-5 py-3.5 text-slate-500">Tgl {t.jatuhTempo}</td>
-                <td className="px-5 py-3.5"><span className={`text-xs font-bold px-2.5 py-1 rounded-full ${st==="lunas"?"bg-emerald-100 text-emerald-700":st==="telat"?"bg-red-100 text-red-600":"bg-amber-100 text-amber-700"}`}>{st==="lunas"?"✓ Lunas":st==="telat"?"✗ Telat":"⏳ Belum"}</span></td>
-                <td className="px-5 py-3.5 font-bold text-slate-700">{nominal?fRp(nominal):"-"}</td>
+        <input className={inp+" pl-10"} placeholder="Cari nama..." value={search} onChange={e=>setSearch(e.target.value)}/></div>
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead><tr className="border-b border-slate-100">{["Kamar","Nama","HP","JT","Status","Nominal"].map(h=><th key={h} className="text-left px-5 py-3 text-xs font-bold text-slate-400 uppercase">{h}</th>)}</tr></thead>
+          <tbody>
+            {fil.length===0&&<tr><td colSpan={6} className="text-center py-8 text-slate-400">Tidak ada penyewa</td></tr>}
+            {fil.map(t=>{const rm=rooms.find(r=>r.id===t.kamarId);const{st,nom}=getSt(t);return(
+              <tr key={t.id} className="border-b border-slate-50 hover:bg-slate-50">
+                <td className="px-5 py-3 font-black text-blue-600">K-{rm?.nomor||"?"}</td>
+                <td className="px-5 py-3 font-bold">{t.nama}</td>
+                <td className="px-5 py-3 text-slate-500 text-xs">{t.hp}</td>
+                <td className="px-5 py-3 text-slate-500">Tgl {t.jatuhTempo}</td>
+                <td className="px-5 py-3"><span className={`text-xs font-bold px-2.5 py-1 rounded-full ${st==="lunas"?"bg-emerald-100 text-emerald-700":st==="telat"?"bg-red-100 text-red-600":"bg-amber-100 text-amber-700"}`}>{st==="lunas"?"✓ Lunas":st==="telat"?"✗ Telat":"⏳ Belum"}</span></td>
+                <td className="px-5 py-3 font-bold">{nom?"Rp "+nom.toLocaleString("id-ID"):"-"}</td>
               </tr>
-            );
-          })}
-        </tbody>
-      </table></div></Card>
+            );})}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
 
-// ═══════════════════════════════════════════════
-// MUTASI BANK & KAS PAGE
-// ═══════════════════════════════════════════════
 function MutasiBankKasPage({ settings, saveSettings, payments, expenses, rooms, tenants, addAudit, user, role, kasTx, saveKas }) {
   const [tab,setTab]=useState("bank");
   const [fMonth,setFMonth]=useState("");
-  const [editSaldo,setEditSaldo]=useState(false);
-  const [saldoForm,setSaldoForm]=useState({bank:+(settings.saldoAwal?.jumlah)||0,kas:+(settings.saldoKas?.jumlah)||0,tanggal:settings.saldoAwal?.tanggal||""});
-  const [showTrf,setShowTrf]=useState(false);
-  const [trfForm,setTrfForm]=useState({jumlah:0,tanggal:new Date().toISOString().split("T")[0]});
-  const ms=months6();
-  const isAdmin=role==="admin";
+  const ms=Array.from({length:6},(_,i)=>{const d=new Date();d.setMonth(d.getMonth()-i);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;});
+  const inp="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none";
+  const fRp=(n)=>"Rp "+Math.round(n||0).toLocaleString("id-ID");
+  const fD=(d)=>d?new Date(d).toLocaleDateString("id-ID",{day:"2-digit",month:"short",year:"numeric"}):"-";
 
-  const saveSaldo=async()=>{
-    await saveSettings({...settings,saldoAwal:{jumlah:+saldoForm.bank,tanggal:saldoForm.tanggal},saldoKas:{jumlah:+saldoForm.kas,tanggal:saldoForm.tanggal}});
-    setEditSaldo(false);
-  };
-  const doTransfer=async()=>{
-    if(!+trfForm.jumlah)return alert("Nominal harus > 0");
-    const tx={id:uid(),tanggal:trfForm.tanggal,tipe:"masuk",jumlah:+trfForm.jumlah,deskripsi:"Transfer dari Bank",inputBy:user,inputAt:now()};
-    await saveKas([...(kasTx||[]),tx]);
-    await addAudit("TRANSFER_KAS",`${user} transfer ${fRp(trfForm.jumlah)} Bank→Kas`);
-    setShowTrf(false);alert("✓ Transfer berhasil!");
-  };
-
-  const bankIn=payments.map(p=>{const rm=rooms.find(r=>r.id===p.kamarId);const t=tenants.find(x=>x.id===p.penyewaId);return{id:p.id,tanggal:p.tanggal,tipe:"masuk",jumlah:+p.nominal,deskripsi:`Sewa K-${rm?.nomor||"?"} – ${t?.nama||"?"}`,by:p.inputBy,periode:p.periode};});
-  const bankOut=[...expenses.filter(e=>e.status==="approved"&&e.sumber==="bank").map(e=>({id:e.id,tanggal:e.tanggal,tipe:"keluar",jumlah:+e.nominal,deskripsi:`${e.kategori}: ${e.deskripsi}`,by:e.inputBy})),
-    ...(kasTx||[]).filter(k=>k.tipe==="masuk").map(k=>({id:k.id+"_b",tanggal:k.tanggal,tipe:"keluar",jumlah:+k.jumlah,deskripsi:"Transfer ke Kas",by:k.inputBy}))];
-  const bankAll=[...bankIn,...bankOut].sort((a,b)=>new Date(a.tanggal)-new Date(b.tanggal));
+  const bankIn=payments.map(p=>{const rm=rooms.find(r=>r.id===p.kamarId);const t=tenants.find(x=>x.id===p.penyewaId);return{id:p.id,tanggal:p.tanggal,tipe:"masuk",jumlah:+p.nominal,desc:`Sewa K-${rm?.nomor||"?"} - ${t?.nama||"?"}`,periode:p.periode};});
+  const bankOut=[...expenses.filter(e=>e.status==="approved"&&e.sumber==="bank").map(e=>({id:e.id,tanggal:e.tanggal,tipe:"keluar",jumlah:+e.nominal,desc:`${e.kategori}: ${e.deskripsi}`})),
+    ...(kasTx||[]).filter(k=>k.tipe==="masuk").map(k=>({id:k.id+"b",tanggal:k.tanggal,tipe:"keluar",jumlah:+k.jumlah,desc:"Transfer ke Kas"}))];
   const kasIn=(kasTx||[]).filter(k=>k.tipe==="masuk");
-  const kasOut=expenses.filter(e=>e.status==="approved"&&(e.sumber==="kas"||!e.sumber)).map(e=>({id:e.id,tanggal:e.tanggal,tipe:"keluar",jumlah:+e.nominal,deskripsi:`${e.kategori}: ${e.deskripsi}`,by:e.inputBy}));
-  const kasAll=[...kasIn,...kasOut].sort((a,b)=>new Date(a.tanggal)-new Date(b.tanggal));
+  const kasOut=expenses.filter(e=>e.status==="approved"&&(e.sumber==="kas"||!e.sumber)).map(e=>({id:e.id,tanggal:e.tanggal,tipe:"keluar",jumlah:+e.nominal,desc:`${e.kategori}: ${e.deskripsi}`}));
 
-  const fil=(txs)=>fMonth?txs.filter(t=>t.periode===fMonth||t.tanggal?.startsWith(fMonth)):txs;
-  const calcRows=(txs,s0)=>{let b=s0;return fil(txs).map(t=>{b+=t.tipe==="masuk"?t.jumlah:-t.jumlah;return{...t,saldo:b};});};
-  const bankS0=+(settings.saldoAwal?.jumlah)||0, kasS0=+(settings.saldoKas?.jumlah)||0;
-  const bankRows=calcRows(bankAll,bankS0), kasRows=calcRows(kasAll,kasS0);
-  const bankAkhir=bankS0+fil(bankAll).reduce((s,t)=>s+(t.tipe==="masuk"?t.jumlah:-t.jumlah),0);
-  const kasAkhir=kasS0+fil(kasAll).reduce((s,t)=>s+(t.tipe==="masuk"?t.jumlah:-t.jumlah),0);
-
-  const TxTable=({rows})=>(
-    <Card><div className="overflow-x-auto"><table className="w-full text-sm">
-      <thead><tr className="border-b border-slate-100">{["Tanggal","Deskripsi","Tipe","Jumlah","Saldo","Oleh"].map(h=>(<th key={h} className="text-left px-5 py-3.5 text-xs font-bold text-slate-400 uppercase tracking-widest">{h}</th>))}</tr></thead>
-      <tbody>
-        {rows.length===0&&<tr><td colSpan={6} className="text-center py-10 text-slate-400">Belum ada transaksi</td></tr>}
-        {rows.map(t=>(
-          <tr key={t.id} className="border-b border-slate-50 hover:bg-slate-50/80">
-            <td className="px-5 py-3 text-xs text-slate-500">{fD(t.tanggal)}</td>
-            <td className="px-5 py-3 font-medium text-slate-800">{t.deskripsi}</td>
-            <td className="px-5 py-3"><span className={`text-xs font-bold px-2.5 py-1 rounded-full ${t.tipe==="masuk"?"bg-emerald-100 text-emerald-700":"bg-red-100 text-red-600"}`}>{t.tipe==="masuk"?"↑ Masuk":"↓ Keluar"}</span></td>
-            <td className={`px-5 py-3 font-black ${t.tipe==="masuk"?"text-emerald-600":"text-red-600"}`}>{t.tipe==="masuk"?"+":"-"}{fRp(t.jumlah)}</td>
-            <td className="px-5 py-3 font-bold text-slate-800">{fRp(t.saldo)}</td>
-            <td className="px-5 py-3 text-xs text-slate-400">{t.by||"-"}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table></div></Card>
-  );
+  const fil=(arr)=>(fMonth?arr.filter(t=>(t.periode||t.tanggal||"").startsWith(fMonth)):arr).sort((a,b)=>new Date(a.tanggal)-new Date(b.tanggal));
+  const s0bank=+(settings.saldoAwal?.jumlah)||0, s0kas=+(settings.saldoKas?.jumlah)||0;
+  const calcRows=(arr,s0)=>{let b=s0;return fil(arr).map(t=>{b+=t.tipe==="masuk"?t.jumlah:-t.jumlah;return{...t,saldo:b};});};
+  const bankRows=calcRows([...bankIn,...bankOut],s0bank);
+  const kasRows=calcRows([...kasIn,...kasOut],s0kas);
+  const bankAkhir=s0bank+fil([...bankIn,...bankOut]).reduce((s,t)=>s+(t.tipe==="masuk"?t.jumlah:-t.jumlah),0);
+  const kasAkhir=s0kas+fil([...kasIn,...kasOut]).reduce((s,t)=>s+(t.tipe==="masuk"?t.jumlah:-t.jumlah),0);
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div><h1 className="text-2xl font-black text-slate-900">Mutasi Keuangan</h1><p className="text-slate-400 text-sm">Rekening Bank &amp; Kas Operasional</p></div>
-        {isAdmin&&<Btn v="secondary" onClick={()=>setShowTrf(true)}>🔄 Transfer Bank → Kas</Btn>}
+      <div className="flex items-center justify-between">
+        <div><h1 className="text-2xl font-black text-slate-900">Mutasi Keuangan</h1><p className="text-slate-400 text-sm">Bank & Kas Operasional</p></div>
+        {role==="admin"&&<button onClick={async()=>{const j=prompt("Jumlah transfer Bank ke Kas:");if(!j||isNaN(j))return;const tx={id:Math.random().toString(36).substr(2),tanggal:new Date().toISOString().split("T")[0],tipe:"masuk",jumlah:+j,deskripsi:"Transfer dari Bank",inputBy:user,inputAt:new Date().toISOString()};await saveKas([...(kasTx||[]),tx]);alert("Transfer berhasil!");}} className="px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded-xl">Transfer Bank→Kas</button>}
       </div>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[{l:"Saldo Bank",v:fRp(bankAkhir),c:"blue"},{l:"Saldo Kas",v:fRp(kasAkhir),c:"amber"},
-          {l:"Total Masuk Bank",v:fRp(fil(bankAll).filter(t=>t.tipe==="masuk").reduce((s,t)=>s+t.jumlah,0)),c:"emerald"},
-          {l:"Total Keluar Kas",v:fRp(fil(kasAll).filter(t=>t.tipe==="keluar").reduce((s,t)=>s+t.jumlah,0)),c:"red"}].map(s=>(
-          <Card key={s.l} className="p-4"><p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{s.l}</p><p className={`text-xl font-black mt-1 text-${s.c}-600`}>{s.v}</p></Card>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[["Saldo Bank",fRp(bankAkhir),"text-blue-600"],["Saldo Kas",fRp(kasAkhir),"text-amber-600"],
+          ["Total Masuk Bank",fRp(fil([...bankIn]).reduce((s,t)=>s+t.jumlah,0)),"text-emerald-600"],
+          ["Total Keluar Kas",fRp(fil([...kasOut]).reduce((s,t)=>s+t.jumlah,0)),"text-red-600"]].map(([l,v,c])=>(
+          <div key={l} className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+            <p className="text-xs font-bold text-slate-400 uppercase">{l}</p>
+            <p className={`text-xl font-black mt-1 ${c}`}>{v}</p>
+          </div>
         ))}
       </div>
-      {isAdmin&&<Card className="p-5">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-black text-slate-900">Saldo Awal</h2>
-          <Btn v="secondary" size="sm" onClick={()=>setEditSaldo(!editSaldo)}><Edit size={14}/>Edit</Btn>
-        </div>
-        {editSaldo?(
-          <div className="grid grid-cols-3 gap-3 items-end">
-            <div><label className="text-xs font-bold text-slate-600 block mb-1">Bank (Rp)</label><input type="number" className={inp} value={saldoForm.bank} onChange={e=>setSaldoForm({...saldoForm,bank:e.target.value})}/></div>
-            <div><label className="text-xs font-bold text-slate-600 block mb-1">Kas (Rp)</label><input type="number" className={inp} value={saldoForm.kas} onChange={e=>setSaldoForm({...saldoForm,kas:e.target.value})}/></div>
-            <div><label className="text-xs font-bold text-slate-600 block mb-1">Per Tanggal</label><input type="date" className={inp} value={saldoForm.tanggal} onChange={e=>setSaldoForm({...saldoForm,tanggal:e.target.value})}/></div>
-            <Btn onClick={saveSaldo}>Simpan</Btn>
-          </div>
-        ):(
-          <div className="flex gap-8">
-            <div><p className="text-xs text-slate-400">Bank</p><p className="text-xl font-black text-blue-700">{fRp(+(settings.saldoAwal?.jumlah)||0)}</p></div>
-            <div><p className="text-xs text-slate-400">Kas</p><p className="text-xl font-black text-amber-700">{fRp(+(settings.saldoKas?.jumlah)||0)}</p></div>
-          </div>
-        )}
-      </Card>}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex rounded-xl overflow-hidden border border-slate-200">
           {[["bank","🏦 Bank"],["kas","💵 Kas"]].map(([t,l])=>(
-            <button key={t} onClick={()=>setTab(t)} className={`px-5 py-2 text-sm font-bold transition-all ${tab===t?"bg-blue-600 text-white":"bg-white text-slate-600 hover:bg-slate-50"}`}>{l}</button>
+            <button key={t} onClick={()=>setTab(t)} className={`px-5 py-2 text-sm font-bold ${tab===t?"bg-blue-600 text-white":"bg-white text-slate-600"}`}>{l}</button>
           ))}
         </div>
         <div className="flex items-center gap-2">
           <label className="text-sm font-bold text-slate-600">Periode:</label>
           <select value={fMonth} onChange={e=>setFMonth(e.target.value)} className={inp+" w-44"}>
-            <option value="">Semua</option>{ms.map(m=><option key={m} value={m}>{mLbl(m)}</option>)}
+            <option value="">Semua</option>{ms.map(m=><option key={m} value={m}>{new Date(m+"-01").toLocaleDateString("id-ID",{month:"long",year:"numeric"})}</option>)}
           </select>
         </div>
       </div>
-      {tab==="bank"&&<TxTable rows={bankRows}/>}
-      {tab==="kas"&&<TxTable rows={kasRows}/>}
-      {showTrf&&<Modal title="Transfer Bank → Kas" onClose={()=>setShowTrf(false)}>
-        <div className="space-y-4">
-          <div className="bg-blue-50 rounded-xl p-4 text-sm"><p>Bank: <strong>{fRp(bankAkhir)}</strong> | Kas: <strong>{fRp(kasAkhir)}</strong></p></div>
-          <div><label className="text-xs font-black text-slate-600 block mb-1">Jumlah (Rp)</label><input type="number" className={inp} value={trfForm.jumlah||0} onChange={e=>setTrfForm({...trfForm,jumlah:+e.target.value})}/></div>
-          <div><label className="text-xs font-black text-slate-600 block mb-1">Tanggal</label><input type="date" className={inp} value={trfForm.tanggal} onChange={e=>setTrfForm({...trfForm,tanggal:e.target.value})}/></div>
-          <div className="flex gap-2 justify-end"><Btn v="secondary" onClick={()=>setShowTrf(false)}>Batal</Btn><Btn onClick={doTransfer}>Konfirmasi</Btn></div>
-        </div>
-      </Modal>}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead><tr className="border-b border-slate-100">{["Tanggal","Deskripsi","Tipe","Jumlah","Saldo"].map(h=><th key={h} className="text-left px-5 py-3 text-xs font-bold text-slate-400 uppercase">{h}</th>)}</tr></thead>
+          <tbody>
+            {(tab==="bank"?bankRows:kasRows).length===0&&<tr><td colSpan={5} className="text-center py-8 text-slate-400">Belum ada transaksi</td></tr>}
+            {(tab==="bank"?bankRows:kasRows).map(t=>(
+              <tr key={t.id} className="border-b border-slate-50 hover:bg-slate-50">
+                <td className="px-5 py-3 text-xs text-slate-500">{fD(t.tanggal)}</td>
+                <td className="px-5 py-3 text-slate-800">{t.desc}</td>
+                <td className="px-5 py-3"><span className={`text-xs font-bold px-2 py-1 rounded-full ${t.tipe==="masuk"?"bg-emerald-100 text-emerald-700":"bg-red-100 text-red-600"}`}>{t.tipe==="masuk"?"↑ Masuk":"↓ Keluar"}</span></td>
+                <td className={`px-5 py-3 font-black ${t.tipe==="masuk"?"text-emerald-600":"text-red-600"}`}>{t.tipe==="masuk"?"+":"-"}{fRp(t.jumlah)}</td>
+                <td className="px-5 py-3 font-bold text-slate-800">{fRp(t.saldo)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
 
-
 export default function App() {
-  const [role,        setRole]    = useState(null);
-  const [user,        setUser]    = useState(null);
-  const [page,        setPage]    = useState("dashboard");
-  const [open,        setOpen]    = useState(true);
-  const [loading,     setLoading] = useState(true);
-  const [invoiceView, setIV]      = useState(null); // public invoice
+  const [role,    setRole]    = useState(null);
+  const [user,    setUser]    = useState(null);
+  const [page,    setPage]    = useState("dashboard");
+  const [open,    setOpen]    = useState(true);
+  const [settings,setSettings]= useState(DEF);
+  const [rooms,   setRooms]   = useState([]);
+  const [tenants, setTenants] = useState([]);
+  const [payments,setPayments]= useState([]);
+  const [expenses,setExpenses]= useState([]);
+  const [audit,   setAudit]   = useState([]);
+  const [users,   setUsers]   = useState(DEF_USERS);
+  const [kasTx,   setKasTx]   = useState([]);
+  const [iv,      setIV]      = useState(null);
 
-  const [settings, setSettings] = useState(DEF);
-  const [rooms,    setRooms]    = useState([]);
-  const [tenants,  setTenants]  = useState([]);
-  const [payments, setPayments] = useState([]);
-  const [expenses, setExpenses] = useState([]);
-  const [audit,    setAudit]    = useState([]);
-  const [users,    setUsers]    = useState(DEF_USERS);
-  const [kasTx,    setKasTx]    = useState([]);
-
-  const [storageOk, setStorageOk] = useState(true);
-
+  // Restore session
   useEffect(()=>{
+    try{const s=localStorage.getItem("km-session");if(s){const{u,r}=JSON.parse(s);if(u&&r){setUser(u);setRole(r);}}}catch{}
+  },[]);
+
+  // Load data in background (never blocks UI)
+  useEffect(()=>{
+    // Check invoice hash
     const hash=window.location.hash;
     if(hash.startsWith("#inv-")){
-      store.get("km-inv-"+hash.replace("#inv-","")).then(inv=>{setIV(inv||"notfound");setLoading(false);}).catch(()=>setLoading(false));
+      store.get("km-inv-"+hash.replace("#inv-","")).then(inv=>setIV(inv||"notfound")).catch(()=>{});
       return;
     }
-    setLoading(false);
     (async()=>{
       try{
-        const s=await store.get(SK.S);setSettings(s||DEF);
-        const r=await store.get(SK.R);if(r&&r.length>0)setRooms(r);else setRooms(mkRooms());
+        const s=await store.get(SK.S); if(s)setSettings(s);
+        const r=await store.get(SK.R); if(r&&r.length>0)setRooms(r); else{const nr=mkRooms();setRooms(nr);store.set(SK.R,nr);}
         const res=await Promise.allSettled([store.get(SK.T),store.get(SK.P),store.get(SK.E),store.get(SK.A),store.get("km-users"),store.get(SK.K)]);
         if(res[0].value)setTenants(res[0].value);
         if(res[1].value)setPayments(res[1].value);
@@ -2221,84 +2118,40 @@ export default function App() {
         if(res[3].value)setAudit(res[3].value);
         if(res[4].value?.length)setUsers(res[4].value);
         if(res[5].value)setKasTx(res[5].value);
-      }catch(e){console.error("Load:",e);}
+      }catch(e){console.error(e);}
     })();
   },[]);
 
-  const save = {
-    settings: async (d)=>{ setSettings(d); await store.set(SK.S,d); },
-    rooms:    async (d)=>{ setRooms(d);    await store.set(SK.R,d); },
-    tenants:  async (d)=>{ setTenants(d);  await store.set(SK.T,d); },
-    payments: async (d)=>{ setPayments(d); await store.set(SK.P,d); },
-    expenses: async (d)=>{ setExpenses(d); await store.set(SK.E,d); },
-  };
-
-  const resetData = async (key) => {
-    if (key==="payments"||key==="all") { setPayments([]); await store.set(SK.P,[]); }
-    if (key==="expenses"||key==="all") { setExpenses([]); await store.set(SK.E,[]); }
-    if (key==="audit"   ||key==="all") { setAudit([]);    await store.set(SK.A,[]); }
-    if (key==="tenants" ||key==="all") {
-      setTenants([]);
-      const fresh = mkRooms(rooms.length);
-      // preserve room config (nomor, lantai, tipe, harga) but reset status & penyewaId
-      const reset = rooms.map(r=>({...r,status:"kosong",penyewaId:null}));
-      setRooms(reset); await store.set(SK.R,reset);
-      await store.set(SK.T,[]);
-    }
-    if (key==="all") {
-      const reset = rooms.map(r=>({...r,status:"kosong",penyewaId:null}));
-      setRooms(reset); await store.set(SK.R,reset);
-    }
-    alert("✓ Data berhasil dihapus!");
-  };
-
-  const addAudit = useCallback(async (action, detail) => {
-    const cur = await store.get(SK.A)||[];
-    const entry = {id:uid(),action,detail,by:user,role,at:now()};
-    const updated = [entry,...cur].slice(0,500);
-    setAudit(updated);
-    await store.set(SK.A,updated);
-  },[user,role]);
-
   const saveUsers=async(d)=>{setUsers(d);await store.set("km-users",d);};
   const saveKas=async(d)=>{setKasTx(d);await store.set(SK.K,d);};
-  const login=(userObj)=>{setUser(userObj.id);setRole(userObj.role);try{localStorage.setItem("km-session",JSON.stringify({u:userObj.id,r:userObj.role}));}catch{}};
+  const login=(u)=>{setUser(u.id);setRole(u.role);try{localStorage.setItem("km-session",JSON.stringify({u:u.id,r:u.role}));}catch{}};
+  const logout=()=>{setUser(null);setRole(null);setPage("dashboard");try{localStorage.removeItem("km-session");}catch{}};
+  const addAudit=async(action,detail)=>{const e={id:Math.random().toString(36).substr(2)+Date.now().toString(36),action,detail,by:user,at:new Date().toISOString()};const na=[e,...(audit||[])].slice(0,200);setAudit(na);await store.set(SK.A,na);};
 
-  const logout = () => { setUser(null); setRole(null); setPage("dashboard"); };
+  const save={
+    settings:async(d)=>{setSettings(d);await store.set(SK.S,d);},
+    rooms:   async(d)=>{setRooms(d);   await store.set(SK.R,d);},
+    tenants: async(d)=>{setTenants(d); await store.set(SK.T,d);},
+    payments:async(d)=>{setPayments(d);await store.set(SK.P,d);},
+    expenses:async(d)=>{setExpenses(d);await store.set(SK.E,d);},
+  };
 
+  const resetData=async(key)=>{await store.set(key,"null");};
 
+  const ctx={role,user,settings,rooms,tenants,payments,expenses,audit,users,kasTx,
+    saveSettings:save.settings,saveRooms:save.rooms,saveTenants:save.tenants,
+    savePayments:save.payments,saveExpenses:save.expenses,addAudit,saveUsers,saveKas};
 
-  const ctx = { role, user, settings, rooms, tenants, payments, expenses, audit,
-    users, kasTx, saveSettings:save.settings, saveRooms:save.rooms,
-    saveTenants:save.tenants, savePayments:save.payments,
-    saveExpenses:save.expenses, addAudit, saveUsers, saveKas };
+  // Invoice view
+  if(iv) return <InvoicePublicView inv={iv==="notfound"?null:iv}/>;
 
-  if (loading) return (
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#0f172a"}}>
-      <div style={{textAlign:"center"}}>
-        <div style={{width:48,height:48,border:"4px solid #3b82f6",borderTopColor:"transparent",borderRadius:"50%",animation:"spin 1s linear infinite",margin:"0 auto 16px"}}/>
-        <p style={{color:"#93c5fd",fontWeight:"bold"}}>{kosName}</p>
-        <p style={{color:"#64748b",fontSize:14}}>Memuat...</p>
-        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-      </div>
-    </div>
-  );
+  // Not logged in — show login
+  if(!role) return <LoginScreen settings={settings} users={users} onLogin={login}/>;
 
-  if (invoiceView) return <InvoicePublicView inv={invoiceView==="notfound"?null:invoiceView}/>;
-  if (!role) return <LoginScreen settings={settings} users={users} onLogin={login}/>;
-
+  // Logged in — show app
   return (
     <Layout page={page} setPage={setPage} role={role} user={user} onLogout={logout}
             expenses={expenses} open={open} setOpen={setOpen}>
-      {!storageOk && (
-        <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-4 mb-5 flex items-start gap-3">
-          <AlertTriangle size={20} className="text-red-500 flex-shrink-0 mt-0.5"/>
-          <div>
-            <p className="font-black text-red-700 text-sm">⚠ Storage tidak tersedia di sesi ini</p>
-            <p className="text-red-600 text-xs mt-1">Data tidak akan tersimpan. Coba tutup &amp; buka kembali app ini. Pastikan tidak dalam mode Incognito.</p>
-          </div>
-        </div>
-      )}
       {page==="dashboard" && <Dashboard {...ctx} setPage={setPage}/>}
       {page==="rooms"     && <RoomsPage {...ctx}/>}
       {page==="tenants"   && <TenantsPage {...ctx}/>}
