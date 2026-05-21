@@ -404,6 +404,63 @@ function Dashboard({ role, user, rooms, tenants, payments, expenses, settings, s
           })}
         </Card>
       )}
+
+      {/* ── JATUH TEMPO 7 HARI KE DEPAN ── */}
+      {(()=>{
+        const next7 = tenants.filter(t=>{
+          if(!t.aktif||!t.jatuhTempo||!t.kamarId) return false;
+          const paid = payments.some(p=>p.penyewaId===t.id&&p.periode===cm);
+          if(paid) return false;
+          const due = new Date(today.getFullYear(),today.getMonth(),t.jatuhTempo);
+          const diff = (due-today)/(1000*60*60*24);
+          return diff>=0 && diff<=7;
+        });
+        if(!next7.length) return null;
+        const genWA = (t,room) => {
+          const due = new Date(today.getFullYear(),today.getMonth(),t.jatuhTempo);
+          return `Halo Kak ${t.nama} 👋
+
+Mengingatkan tagihan sewa Kamar ${room?.nomor} bulan ${["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"][today.getMonth()]} ${today.getFullYear()} jatuh tempo *${due.toLocaleDateString("id-ID",{day:"numeric",month:"long",year:"numeric"})}*.
+
+Mohon segera lakukan pembayaran. Terima kasih 🙏
+
+_Manajemen Kos Meruya_`;
+        };
+        return (
+          <Card className="p-6 border-l-4 border-blue-400">
+            <div className="flex items-center gap-2 mb-4">
+              <Bell size={20} className="text-blue-500"/>
+              <h2 className="font-black text-slate-900">🔔 {next7.length} Penyewa Jatuh Tempo 7 Hari ke Depan</h2>
+            </div>
+            <p className="text-xs text-slate-400 mb-4">Segera tagih sebelum jatuh tempo!</p>
+            {next7.map(t=>{
+              const room=rooms.find(r=>r.id===t.kamarId);
+              const due=new Date(today.getFullYear(),today.getMonth(),t.jatuhTempo);
+              const sisa=Math.ceil((due-today)/(1000*60*60*24));
+              return (
+                <div key={t.id} className="flex items-center justify-between py-3 border-b border-slate-100 last:border-0 gap-4">
+                  <div>
+                    <p className="text-sm font-bold text-slate-800">{t.nama}</p>
+                    <p className="text-xs text-slate-400">Kamar {room?.nomor} · JT tgl {t.jatuhTempo} · <span className="font-bold text-blue-600">{sisa===0?"Hari ini!":sisa+" hari lagi"}</span></p>
+                  </div>
+                  <div className="flex gap-2 flex-shrink-0">
+                    <button onClick={()=>{
+                      const msg=genWA(t,room);
+                      navigator.clipboard.writeText(msg).catch(()=>{});
+                      alert("Pesan pengingat tersalin!\n\nPaste ke WhatsApp "+t.nama+" ("+t.hp+")");
+                    }} className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-xl transition">
+                      💬 Kirim WA
+                    </button>
+                    <button onClick={()=>setPage("invoices")} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition">
+                      📋 Buat Invoice
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </Card>
+        );
+      })()}
     </div>
   );
 }
@@ -974,7 +1031,7 @@ function ExpensesPage({ role, user, expenses, saveExpenses, addAudit }) {
 // ═══════════════════════════════════════════════
 // REPORTS PAGE
 // ═══════════════════════════════════════════════
-function ReportsPage({ rooms, tenants, payments, expenses, settings }) {
+function ReportsPage({ rooms, tenants, payments, expenses, settings, audit }) {
   const [month, setMonth] = useState(tMon());
   const ms = months6().concat(Array.from({length:6},(_,i)=>{ const d=new Date(); d.setMonth(d.getMonth()-6-i); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; }));
 
