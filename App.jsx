@@ -166,6 +166,8 @@ function Layout({ children, page, setPage, role, user, onLogout, expenses, open,
     { id:"payments",  icon:CreditCard,label:"Pembayaran",      roles:["admin","investor","staff"] },
     { id:"expenses",  icon:Wallet,    label:"Kas & Keluar",    roles:["admin","investor","staff"] },
     { id:"invoices",  icon:FileText,  label:"Invoice",         roles:["admin","investor","staff"] },
+    { id:"status",    icon:CheckCircle,label:"Status Bayar",   roles:["admin","investor","staff"] },
+    { id:"mutasi",    icon:TrendingUp, label:"Mutasi Bank",    roles:["admin","investor"] },
     { id:"reports",   icon:BarChart2, label:"Laporan",         roles:["admin","investor"] },
     { id:"settings",  icon:Settings,  label:"Pengaturan",      roles:["admin"] },
     { id:"audit",     icon:List,      label:"Log Aktivitas",   roles:["admin","investor"] },
@@ -352,6 +354,52 @@ function Dashboard({ role, user, rooms, tenants, payments, expenses, settings, s
           })}
         </Card>
       )}
+
+      {(()=>{
+        const next7=tenants.filter(t=>{
+          if(!t.aktif||!t.jatuhTempo)return false;
+          const paid=payments.some(p=>p.penyewaId===t.id&&p.periode===cm);
+          if(paid)return false;
+          const due=new Date(today.getFullYear(),today.getMonth(),t.jatuhTempo);
+          const diff=(due-today)/(1000*60*60*24);
+          return diff>=0&&diff<=7;
+        });
+        if(!next7.length)return null;
+        return (
+          <Card className="p-6 border-l-4 border-blue-400">
+            <div className="flex items-center gap-2 mb-3">
+              <Bell size={20} className="text-blue-500"/>
+              <h2 className="font-black text-slate-900">🔔 {next7.length} Penyewa Jatuh Tempo 7 Hari ke Depan</h2>
+            </div>
+            {next7.map(t=>{
+              const room=rooms.find(r=>r.id===t.kamarId);
+              const due=new Date(today.getFullYear(),today.getMonth(),t.jatuhTempo);
+              const sisa=Math.ceil((due-today)/(1000*60*60*24));
+              const msg=`Halo Kak ${t.nama} 👋
+
+Mengingatkan tagihan sewa Kamar ${room?.nomor} bulan ini jatuh tempo *${due.toLocaleDateString("id-ID",{day:"numeric",month:"long",year:"numeric"})}*.
+
+Mohon segera lakukan pembayaran.
+
+_Manajemen Kos Meruya_`;
+              return (
+                <div key={t.id} className="flex items-center justify-between py-3 border-b border-slate-100 last:border-0 gap-3">
+                  <div>
+                    <p className="text-sm font-bold text-slate-800">{t.nama}</p>
+                    <p className="text-xs text-slate-400">Kamar {room?.nomor} · <span className="font-bold text-blue-600">{sisa===0?"Hari ini!":sisa+" hari lagi"}</span></p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={()=>{navigator.clipboard.writeText(msg).catch(()=>{});alert("Pesan tersalin!
+
+Kirim ke WA: "+t.hp);}} className="px-3 py-1.5 bg-green-600 text-white text-xs font-bold rounded-xl">💬 WA</button>
+                    <button onClick={()=>setPage("invoices")} className="px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-xl">📋 Invoice</button>
+                  </div>
+                </div>
+              );
+            })}
+          </Card>
+        );
+      })()}
     </div>
   );
 }
@@ -904,6 +952,11 @@ function ExpensesPage({ role, user, expenses, saveExpenses, addAudit }) {
               <div><label className="text-xs font-bold text-slate-600 block mb-1">Tanggal</label>
                 <input type="date" className={inp} value={form.tanggal||""} onChange={e=>setForm({...form,tanggal:e.target.value})}/></div>
             </div>
+            <div><label className="text-xs font-bold text-slate-600 block mb-1">💰 Bayar dari</label>
+              <select className={inp} value={form.sumber||"kas"} onChange={e=>setForm({...form,sumber:e.target.value})}>
+                <option value="kas">💵 Kas (tunai operasional)</option>
+                <option value="bank">🏦 Bank (transfer rekening)</option>
+              </select></div>
             <div className="flex gap-2 justify-end pt-2">
               <Btn v="secondary" onClick={()=>setModal(false)}>Batal</Btn>
               <Btn onClick={save}>Simpan</Btn>
@@ -1349,6 +1402,32 @@ function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, 
         <Btn onClick={doSave} size="lg">Simpan Semua Perubahan</Btn>
         {saved&&<span className="text-emerald-600 font-black">✓ Tersimpan!</span>}
       </div>
+
+      {/* USER MANAGEMENT */}
+      <Card className="p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2"><Shield size={18} className="text-blue-600"/><h2 className="font-black text-slate-900">Kelola Pengguna</h2></div>
+          <Btn v="secondary" size="sm" onClick={()=>{
+            const id=prompt("ID Pengguna (huruf kecil, tanpa spasi):");
+            if(!id)return;
+            if((users||[]).find(u=>u.id===id)){alert("ID sudah ada!");return;}
+            const nama=prompt("Nama lengkap:");if(!nama)return;
+            const role=prompt("Role (admin/investor/staff):");
+            if(!["admin","investor","staff"].includes(role)){alert("Role tidak valid!");return;}
+            const pwd=prompt("Password:");if(!pwd)return;
+            saveUsers([...(users||[]),{id,nama,role,password:pwd}]);
+          }}><Plus size={14}/>Tambah</Btn>
+        </div>
+        <div className="space-y-2">
+          {(users||DEF_USERS).map(u=>(
+            <div key={u.id} className="flex items-center gap-3 bg-slate-50 rounded-xl p-3">
+              <div className="flex-1"><span className="font-black text-slate-800 text-sm">{u.id}</span><span className="text-slate-400 text-xs ml-2">· {u.nama} · {u.role}</span></div>
+              <button onClick={()=>{const pwd=prompt(`Password baru untuk ${u.id}:`);if(!pwd)return;saveUsers((users||[]).map(x=>x.id===u.id?{...x,password:pwd}:x));}} className="text-xs px-2.5 py-1 bg-blue-50 text-blue-600 rounded-lg font-bold">Ganti PW</button>
+              {u.id!==user&&<button onClick={()=>{if(!confirm(`Hapus ${u.id}?`))return;saveUsers((users||[]).filter(x=>x.id!==u.id));}} className="text-xs px-2.5 py-1 bg-red-50 text-red-500 rounded-lg font-bold">Hapus</button>}
+            </div>
+          ))}
+        </div>
+      </Card>
 
       {/* RESET DATA */}
       <Card className="p-6 border-2 border-red-100">
@@ -1925,6 +2004,194 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
 }
 
 
+// ═══════════════════════════════════════════════
+// STATUS BAYAR PAGE
+// ═══════════════════════════════════════════════
+function StatusBayarPage({ rooms, tenants, payments }) {
+  const [fMonth, setFMonth] = useState(tMon());
+  const [search, setSearch] = useState("");
+  const ms = Array.from({length:12},(_,i)=>{const d=new Date();d.setMonth(d.getMonth()-i);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;});
+  const today = new Date();
+  const active = tenants.filter(t=>t.aktif);
+  const filtered = active.filter(t=>!search||t.nama?.toLowerCase().includes(search.toLowerCase()));
+
+  const getStatus = (t) => {
+    const paid=payments.find(p=>p.penyewaId===t.id&&p.periode===fMonth);
+    if(paid)return{st:"lunas",nominal:paid.nominal};
+    const [y,m]=fMonth.split("-").map(Number);
+    const isCur=y===today.getFullYear()&&m===today.getMonth()+1;
+    if(isCur&&t.jatuhTempo){const due=new Date(y,m-1,t.jatuhTempo);return{st:today>due?"telat":"belum",nominal:0};}
+    return{st:"telat",nominal:0};
+  };
+  const stats={lunas:0,belum:0,telat:0};
+  active.forEach(t=>{const{st}=getStatus(t);stats[st]=(stats[st]||0)+1;});
+
+  return (
+    <div className="space-y-5">
+      <div><h1 className="text-2xl font-black text-slate-900">Status Pembayaran</h1>
+        <p className="text-slate-400 text-sm">Pantau status bayar semua penyewa</p></div>
+      <div className="flex items-center gap-3">
+        <label className="text-sm font-bold text-slate-600">Bulan:</label>
+        <select value={fMonth} onChange={e=>setFMonth(e.target.value)} className={inp+" w-44"}>
+          {ms.map(m=><option key={m} value={m}>{mLbl(m)}</option>)}
+        </select>
+      </div>
+      <div className="grid grid-cols-3 gap-4">
+        {[{l:"Sudah Lunas",v:stats.lunas,c:"emerald"},{l:"Belum Bayar",v:stats.belum,c:"amber"},{l:"Terlambat",v:stats.telat,c:"red"}].map(s=>(
+          <Card key={s.l} className="p-4 text-center">
+            <p className={`text-3xl font-black text-${s.c}-600`}>{s.v}</p>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">{s.l}</p>
+          </Card>
+        ))}
+      </div>
+      <div className="relative"><Search size={15} className="absolute left-4 top-3 text-slate-400"/>
+        <input className={inp+" pl-10"} placeholder="Cari nama penyewa..." value={search} onChange={e=>setSearch(e.target.value)}/></div>
+      <Card><div className="overflow-x-auto"><table className="w-full text-sm">
+        <thead><tr className="border-b border-slate-100">
+          {["Kamar","Nama","No HP","JT",`Status ${mLbl(fMonth)}`,"Nominal"].map(h=>(
+            <th key={h} className="text-left px-5 py-3.5 text-xs font-bold text-slate-400 uppercase tracking-widest">{h}</th>
+          ))}</tr></thead>
+        <tbody>
+          {filtered.length===0&&<tr><td colSpan={6} className="text-center py-10 text-slate-400">Tidak ada penyewa aktif</td></tr>}
+          {filtered.map(t=>{
+            const room=rooms.find(r=>r.id===t.kamarId);
+            const{st,nominal}=getStatus(t);
+            return(
+              <tr key={t.id} className="border-b border-slate-50 hover:bg-slate-50/80">
+                <td className="px-5 py-3.5 font-black text-blue-600">K-{room?.nomor||"?"}</td>
+                <td className="px-5 py-3.5 font-bold text-slate-800">{t.nama}</td>
+                <td className="px-5 py-3.5 text-slate-500 text-xs">{t.hp}</td>
+                <td className="px-5 py-3.5 text-slate-500">Tgl {t.jatuhTempo}</td>
+                <td className="px-5 py-3.5"><span className={`text-xs font-bold px-2.5 py-1 rounded-full ${st==="lunas"?"bg-emerald-100 text-emerald-700":st==="telat"?"bg-red-100 text-red-600":"bg-amber-100 text-amber-700"}`}>{st==="lunas"?"✓ Lunas":st==="telat"?"✗ Telat":"⏳ Belum"}</span></td>
+                <td className="px-5 py-3.5 font-bold text-slate-700">{nominal?fRp(nominal):"-"}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table></div></Card>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════
+// MUTASI BANK & KAS PAGE
+// ═══════════════════════════════════════════════
+function MutasiBankKasPage({ settings, saveSettings, payments, expenses, rooms, tenants, addAudit, user, role, kasTx, saveKas }) {
+  const [tab,setTab]=useState("bank");
+  const [fMonth,setFMonth]=useState("");
+  const [editSaldo,setEditSaldo]=useState(false);
+  const [saldoForm,setSaldoForm]=useState({bank:+(settings.saldoAwal?.jumlah)||0,kas:+(settings.saldoKas?.jumlah)||0,tanggal:settings.saldoAwal?.tanggal||""});
+  const [showTrf,setShowTrf]=useState(false);
+  const [trfForm,setTrfForm]=useState({jumlah:0,tanggal:new Date().toISOString().split("T")[0]});
+  const ms=months6();
+  const isAdmin=role==="admin";
+
+  const saveSaldo=async()=>{
+    await saveSettings({...settings,saldoAwal:{jumlah:+saldoForm.bank,tanggal:saldoForm.tanggal},saldoKas:{jumlah:+saldoForm.kas,tanggal:saldoForm.tanggal}});
+    setEditSaldo(false);
+  };
+  const doTransfer=async()=>{
+    if(!+trfForm.jumlah)return alert("Nominal harus > 0");
+    const tx={id:uid(),tanggal:trfForm.tanggal,tipe:"masuk",jumlah:+trfForm.jumlah,deskripsi:"Transfer dari Bank",inputBy:user,inputAt:now()};
+    await saveKas([...(kasTx||[]),tx]);
+    await addAudit("TRANSFER_KAS",`${user} transfer ${fRp(trfForm.jumlah)} Bank→Kas`);
+    setShowTrf(false);alert("✓ Transfer berhasil!");
+  };
+
+  const bankIn=payments.map(p=>{const rm=rooms.find(r=>r.id===p.kamarId);const t=tenants.find(x=>x.id===p.penyewaId);return{id:p.id,tanggal:p.tanggal,tipe:"masuk",jumlah:+p.nominal,deskripsi:`Sewa K-${rm?.nomor||"?"} – ${t?.nama||"?"}`,by:p.inputBy,periode:p.periode};});
+  const bankOut=[...expenses.filter(e=>e.status==="approved"&&e.sumber==="bank").map(e=>({id:e.id,tanggal:e.tanggal,tipe:"keluar",jumlah:+e.nominal,deskripsi:`${e.kategori}: ${e.deskripsi}`,by:e.inputBy})),
+    ...(kasTx||[]).filter(k=>k.tipe==="masuk").map(k=>({id:k.id+"_b",tanggal:k.tanggal,tipe:"keluar",jumlah:+k.jumlah,deskripsi:"Transfer ke Kas",by:k.inputBy}))];
+  const bankAll=[...bankIn,...bankOut].sort((a,b)=>new Date(a.tanggal)-new Date(b.tanggal));
+  const kasIn=(kasTx||[]).filter(k=>k.tipe==="masuk");
+  const kasOut=expenses.filter(e=>e.status==="approved"&&(e.sumber==="kas"||!e.sumber)).map(e=>({id:e.id,tanggal:e.tanggal,tipe:"keluar",jumlah:+e.nominal,deskripsi:`${e.kategori}: ${e.deskripsi}`,by:e.inputBy}));
+  const kasAll=[...kasIn,...kasOut].sort((a,b)=>new Date(a.tanggal)-new Date(b.tanggal));
+
+  const fil=(txs)=>fMonth?txs.filter(t=>t.periode===fMonth||t.tanggal?.startsWith(fMonth)):txs;
+  const calcRows=(txs,s0)=>{let b=s0;return fil(txs).map(t=>{b+=t.tipe==="masuk"?t.jumlah:-t.jumlah;return{...t,saldo:b};});};
+  const bankS0=+(settings.saldoAwal?.jumlah)||0, kasS0=+(settings.saldoKas?.jumlah)||0;
+  const bankRows=calcRows(bankAll,bankS0), kasRows=calcRows(kasAll,kasS0);
+  const bankAkhir=bankS0+fil(bankAll).reduce((s,t)=>s+(t.tipe==="masuk"?t.jumlah:-t.jumlah),0);
+  const kasAkhir=kasS0+fil(kasAll).reduce((s,t)=>s+(t.tipe==="masuk"?t.jumlah:-t.jumlah),0);
+
+  const TxTable=({rows})=>(
+    <Card><div className="overflow-x-auto"><table className="w-full text-sm">
+      <thead><tr className="border-b border-slate-100">{["Tanggal","Deskripsi","Tipe","Jumlah","Saldo","Oleh"].map(h=>(<th key={h} className="text-left px-5 py-3.5 text-xs font-bold text-slate-400 uppercase tracking-widest">{h}</th>))}</tr></thead>
+      <tbody>
+        {rows.length===0&&<tr><td colSpan={6} className="text-center py-10 text-slate-400">Belum ada transaksi</td></tr>}
+        {rows.map(t=>(
+          <tr key={t.id} className="border-b border-slate-50 hover:bg-slate-50/80">
+            <td className="px-5 py-3 text-xs text-slate-500">{fD(t.tanggal)}</td>
+            <td className="px-5 py-3 font-medium text-slate-800">{t.deskripsi}</td>
+            <td className="px-5 py-3"><span className={`text-xs font-bold px-2.5 py-1 rounded-full ${t.tipe==="masuk"?"bg-emerald-100 text-emerald-700":"bg-red-100 text-red-600"}`}>{t.tipe==="masuk"?"↑ Masuk":"↓ Keluar"}</span></td>
+            <td className={`px-5 py-3 font-black ${t.tipe==="masuk"?"text-emerald-600":"text-red-600"}`}>{t.tipe==="masuk"?"+":"-"}{fRp(t.jumlah)}</td>
+            <td className="px-5 py-3 font-bold text-slate-800">{fRp(t.saldo)}</td>
+            <td className="px-5 py-3 text-xs text-slate-400">{t.by||"-"}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table></div></Card>
+  );
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-black text-slate-900">Mutasi Keuangan</h1><p className="text-slate-400 text-sm">Rekening Bank &amp; Kas Operasional</p></div>
+        {isAdmin&&<Btn v="secondary" onClick={()=>setShowTrf(true)}>🔄 Transfer Bank → Kas</Btn>}
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[{l:"Saldo Bank",v:fRp(bankAkhir),c:"blue"},{l:"Saldo Kas",v:fRp(kasAkhir),c:"amber"},
+          {l:"Total Masuk Bank",v:fRp(fil(bankAll).filter(t=>t.tipe==="masuk").reduce((s,t)=>s+t.jumlah,0)),c:"emerald"},
+          {l:"Total Keluar Kas",v:fRp(fil(kasAll).filter(t=>t.tipe==="keluar").reduce((s,t)=>s+t.jumlah,0)),c:"red"}].map(s=>(
+          <Card key={s.l} className="p-4"><p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{s.l}</p><p className={`text-xl font-black mt-1 text-${s.c}-600`}>{s.v}</p></Card>
+        ))}
+      </div>
+      {isAdmin&&<Card className="p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-black text-slate-900">Saldo Awal</h2>
+          <Btn v="secondary" size="sm" onClick={()=>setEditSaldo(!editSaldo)}><Edit size={14}/>Edit</Btn>
+        </div>
+        {editSaldo?(
+          <div className="grid grid-cols-3 gap-3 items-end">
+            <div><label className="text-xs font-bold text-slate-600 block mb-1">Bank (Rp)</label><input type="number" className={inp} value={saldoForm.bank} onChange={e=>setSaldoForm({...saldoForm,bank:e.target.value})}/></div>
+            <div><label className="text-xs font-bold text-slate-600 block mb-1">Kas (Rp)</label><input type="number" className={inp} value={saldoForm.kas} onChange={e=>setSaldoForm({...saldoForm,kas:e.target.value})}/></div>
+            <div><label className="text-xs font-bold text-slate-600 block mb-1">Per Tanggal</label><input type="date" className={inp} value={saldoForm.tanggal} onChange={e=>setSaldoForm({...saldoForm,tanggal:e.target.value})}/></div>
+            <Btn onClick={saveSaldo}>Simpan</Btn>
+          </div>
+        ):(
+          <div className="flex gap-8">
+            <div><p className="text-xs text-slate-400">Bank</p><p className="text-xl font-black text-blue-700">{fRp(+(settings.saldoAwal?.jumlah)||0)}</p></div>
+            <div><p className="text-xs text-slate-400">Kas</p><p className="text-xl font-black text-amber-700">{fRp(+(settings.saldoKas?.jumlah)||0)}</p></div>
+          </div>
+        )}
+      </Card>}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex rounded-xl overflow-hidden border border-slate-200">
+          {[["bank","🏦 Bank"],["kas","💵 Kas"]].map(([t,l])=>(
+            <button key={t} onClick={()=>setTab(t)} className={`px-5 py-2 text-sm font-bold transition-all ${tab===t?"bg-blue-600 text-white":"bg-white text-slate-600 hover:bg-slate-50"}`}>{l}</button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-sm font-bold text-slate-600">Periode:</label>
+          <select value={fMonth} onChange={e=>setFMonth(e.target.value)} className={inp+" w-44"}>
+            <option value="">Semua</option>{ms.map(m=><option key={m} value={m}>{mLbl(m)}</option>)}
+          </select>
+        </div>
+      </div>
+      {tab==="bank"&&<TxTable rows={bankRows}/>}
+      {tab==="kas"&&<TxTable rows={kasRows}/>}
+      {showTrf&&<Modal title="Transfer Bank → Kas" onClose={()=>setShowTrf(false)}>
+        <div className="space-y-4">
+          <div className="bg-blue-50 rounded-xl p-4 text-sm"><p>Bank: <strong>{fRp(bankAkhir)}</strong> | Kas: <strong>{fRp(kasAkhir)}</strong></p></div>
+          <div><label className="text-xs font-black text-slate-600 block mb-1">Jumlah (Rp)</label><input type="number" className={inp} value={trfForm.jumlah||0} onChange={e=>setTrfForm({...trfForm,jumlah:+e.target.value})}/></div>
+          <div><label className="text-xs font-black text-slate-600 block mb-1">Tanggal</label><input type="date" className={inp} value={trfForm.tanggal} onChange={e=>setTrfForm({...trfForm,tanggal:e.target.value})}/></div>
+          <div className="flex gap-2 justify-end"><Btn v="secondary" onClick={()=>setShowTrf(false)}>Batal</Btn><Btn onClick={doTransfer}>Konfirmasi</Btn></div>
+        </div>
+      </Modal>}
+    </div>
+  );
+}
+
+
 export default function App() {
   const [role,        setRole]    = useState(null);
   const [user,        setUser]    = useState(null);
@@ -2045,6 +2312,8 @@ export default function App() {
       {page==="payments"  && <PaymentsPage {...ctx}/>}
       {page==="expenses"  && <ExpensesPage {...ctx}/>}
       {page==="invoices"  && <InvoicesPage {...ctx}/>}
+      {page==="status"    && <StatusBayarPage {...ctx}/>}
+      {page==="mutasi"    && (role==="admin"||role==="investor") && <MutasiBankKasPage {...ctx}/>}
       {page==="reports"   && (role==="admin"||role==="investor") && <ReportsPage {...ctx}/>}
       {page==="settings"  && role==="admin" && <SettingsPage {...ctx} onReset={resetData}/>}
       {page==="audit"     && (role==="admin"||role==="investor") && <AuditPage {...ctx}/>}
