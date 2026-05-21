@@ -49,8 +49,8 @@ const normTenant = t => ({
   room:      t.room      || t.kamar       || t.nomorKamar || t.noKamar || '',
   dueDate:   t.dueDate   || t.tanggalJT   || t.jatuhTempo || t.tglJT || '',
   startDate: t.startDate || t.tanggalMasuk|| t.tglMasuk  || '',
-  rent:      t.rent      || t.sewa        || t.hargaSewa  || 0,
-  deposit:   t.deposit   || t.depositAwal || t.dp         || 0,
+  rent:      Number(t.rent || t.sewa || t.hargaSewa || 0),
+  deposit:   Number(t.deposit || t.depositAwal || t.dp || 0),
   status:    t.status    || 'aktif',
 })
 const normPayment = p => ({
@@ -85,6 +85,13 @@ const normInvoice = i => ({
   dueDate:    i.dueDate    || i.jatuhTempo || i.tglJT || '',
   status:     i.status     || 'belum_lunas',
 })
+
+// ─── Skip junk/empty records ──────────────────────────────────────────────────
+const validRoom    = r => !!(r.no)
+const validTenant  = t => !!(t.name)
+const validPayment = p => !!(p.tenantName || p.tenantId) && Number(p.amount) > 0
+const validExpense = e => !!(e.desc) && Number(e.amount) > 0
+const validInvoice = i => !!(i.invNo)
 
 // ─── Room initialization helper ───────────────────────────────────────────────
 async function initRoomsIfEmpty() {
@@ -335,9 +342,9 @@ function Dashboard({ user, logAction }) {
   if (loading) return <div className="flex items-center justify-center h-40 text-gray-500">Memuat data...</div>
 
   const roomList    = toObj(data.rooms).map(normRoom)
-  const tenantList  = toObj(data.tenants).map(normTenant)
-  const payList     = toObj(data.payments).map(normPayment)
-  const expList     = toObj(data.expenses).map(normExpense)
+  const tenantList  = toObj(data.tenants).map(normTenant).filter(validTenant)
+  const payList     = toObj(data.payments).map(normPayment).filter(validPayment)
+  const expList     = toObj(data.expenses).map(normExpense).filter(validExpense)
 
   const totalRooms  = roomList.length || 42
   const occupied    = roomList.filter(r=>r.status==='isi').length
@@ -488,7 +495,10 @@ function Kamar({ user, logAction }) {
     } else {
       // Normalize field names (handle old Indonesian format)
       const normalized = {}
-      Object.entries(data).forEach(([k,v]) => { normalized[k] = normRoom(v) })
+      Object.entries(data).forEach(([k,v]) => {
+        const r = normRoom(v)
+        if (validRoom(r)) normalized[k] = r  // skip junk records without room number
+      })
       setRooms(normalized)
     }
     setLoading(false)
@@ -596,8 +606,8 @@ function Penyewa({ user, logAction }) {
   const load = async () => {
     setLoading(true)
     const [t, r] = await Promise.all([fbGet('km_tenants'), fbGet('km_rooms')])
-    setTenants(toObj(t).map(normTenant))
-    setRooms(toObj(r).map(normRoom).filter(r=>r.status==='kosong'))
+    setTenants(toObj(t).map(normTenant).filter(validTenant))
+    setRooms(toObj(r).map(normRoom).filter(validRoom).filter(r=>r.status==='kosong'))
     setLoading(false)
   }
   useEffect(()=>{ load() },[])
@@ -746,8 +756,8 @@ function Pembayaran({ user, logAction }) {
   const load = async () => {
     setLoading(true)
     const [p, t] = await Promise.all([fbGet('km_payments'), fbGet('km_tenants')])
-    setPayments(toObj(p).map(normPayment))
-    setTenants(toObj(t).map(normTenant).filter(t=>t.status!=='keluar'))
+    setPayments(toObj(p).map(normPayment).filter(validPayment))
+    setTenants(toObj(t).map(normTenant).filter(validTenant).filter(t=>t.status!=='keluar'))
     setLoading(false)
   }
   useEffect(()=>{ load() },[])
@@ -889,8 +899,8 @@ function Invoice({ user, logAction }) {
   const load = async () => {
     setLoading(true)
     const [inv, t] = await Promise.all([fbGet('km_invoices'), fbGet('km_tenants')])
-    setInvoices(toObj(inv).map(normInvoice).sort((a,b)=>b.createdAt?.localeCompare(a.createdAt)||0))
-    setTenants(toObj(t).map(normTenant).filter(t=>t.status!=='keluar'))
+    setInvoices(toObj(inv).map(normInvoice).filter(validInvoice).sort((a,b)=>b.createdAt?.localeCompare(a.createdAt)||0))
+    setTenants(toObj(t).map(normTenant).filter(validTenant).filter(t=>t.status!=='keluar'))
     setLoading(false)
   }
   useEffect(()=>{ load() },[])
@@ -1021,8 +1031,8 @@ function StatusBayar({ user }) {
   const load = async () => {
     setLoading(true)
     const [t, p] = await Promise.all([fbGet('km_tenants'), fbGet('km_payments')])
-    setTenants(toObj(t).map(normTenant).filter(t=>t.status!=='keluar'))
-    setPayments(toObj(p).map(normPayment))
+    setTenants(toObj(t).map(normTenant).filter(validTenant).filter(t=>t.status!=='keluar'))
+    setPayments(toObj(p).map(normPayment).filter(validPayment))
     setLoading(false)
   }
   useEffect(()=>{ load() },[])
@@ -1104,7 +1114,7 @@ function KasKeluar({ user, logAction }) {
   const load = async () => {
     setLoading(true)
     const data = await fbGet('km_expenses')
-    setExpenses(toObj(data).map(normExpense).sort((a,b)=>b.createdAt?.localeCompare(a.createdAt)||0))
+    setExpenses(toObj(data).map(normExpense).filter(validExpense).sort((a,b)=>b.createdAt?.localeCompare(a.createdAt)||0))
     setLoading(false)
   }
   useEffect(()=>{ load() },[])
@@ -1403,8 +1413,8 @@ function Laporan({ user }) {
   const load = async () => {
     setLoading(true)
     const [p, e] = await Promise.all([fbGet('km_payments'), fbGet('km_expenses')])
-    setPayments(toObj(p).map(normPayment))
-    setExpenses(toObj(e).map(normExpense))
+    setPayments(toObj(p).map(normPayment).filter(validPayment))
+    setExpenses(toObj(e).map(normExpense).filter(validExpense))
     setLoading(false)
   }
   useEffect(()=>{ load() },[])
@@ -1555,6 +1565,97 @@ function Pengaturan({ user, logAction }) {
     await fbDelete(`km_users/${u.id}`)
     await logAction('Hapus User', u.name)
     load()
+  }
+
+  // ── Clean junk records ────────────────────────────────────────────────────
+  const [cleanBusy, setCleanBusy]     = useState(false)
+  const [cleanResult, setCleanResult] = useState('')
+
+  const cleanDatabase = async () => {
+    if (!confirm('Hapus semua record kosong/invalid dari Firebase? Record valid (punya nama/nomor) tetap aman.')) return
+    setCleanBusy(true)
+    setCleanResult('')
+    const log = []
+    try {
+      // Clean rooms — keep only those with valid room number
+      const rawRooms = await fbGet('km_rooms')
+      if (rawRooms) {
+        let kept = 0, deleted = 0
+        for (const [k,v] of Object.entries(rawRooms)) {
+          const r = normRoom(v)
+          if (!validRoom(r)) {
+            await fbDelete(`km_rooms/${k}`)
+            deleted++
+          } else { kept++ }
+        }
+        log.push(`🚪 Kamar: ${kept} valid disimpan, ${deleted} junk dihapus`)
+      }
+      // Clean tenants
+      const rawTenants = await fbGet('km_tenants')
+      if (rawTenants) {
+        let kept = 0, deleted = 0
+        for (const [k,v] of Object.entries(rawTenants)) {
+          const t = normTenant(v)
+          if (!validTenant(t)) {
+            await fbDelete(`km_tenants/${k}`)
+            deleted++
+          } else { kept++ }
+        }
+        log.push(`👥 Penyewa: ${kept} valid disimpan, ${deleted} junk dihapus`)
+      }
+      // Clean payments
+      const rawPay = await fbGet('km_payments')
+      if (rawPay) {
+        let kept = 0, deleted = 0
+        for (const [k,v] of Object.entries(rawPay)) {
+          const p = normPayment(v)
+          if (!validPayment(p)) {
+            await fbDelete(`km_payments/${k}`)
+            deleted++
+          } else { kept++ }
+        }
+        log.push(`💳 Pembayaran: ${kept} valid disimpan, ${deleted} junk dihapus`)
+      }
+      // Clean expenses
+      const rawExp = await fbGet('km_expenses')
+      if (rawExp) {
+        let kept = 0, deleted = 0
+        for (const [k,v] of Object.entries(rawExp)) {
+          const e = normExpense(v)
+          if (!validExpense(e)) {
+            await fbDelete(`km_expenses/${k}`)
+            deleted++
+          } else { kept++ }
+        }
+        log.push(`💸 Pengeluaran: ${kept} valid disimpan, ${deleted} junk dihapus`)
+      }
+      // Clean invoices
+      const rawInv = await fbGet('km_invoices')
+      if (rawInv) {
+        let kept = 0, deleted = 0
+        for (const [k,v] of Object.entries(rawInv)) {
+          const i = normInvoice(v)
+          if (!validInvoice(i)) {
+            await fbDelete(`km_invoices/${k}`)
+            deleted++
+          } else { kept++ }
+        }
+        log.push(`🧾 Invoice: ${kept} valid disimpan, ${deleted} junk dihapus`)
+      }
+      // After cleanup, rebuild 42 rooms if less than 42 remain
+      const remaining = await fbGet('km_rooms')
+      const remainCount = remaining ? Object.keys(remaining).length : 0
+      if (remainCount < 42) {
+        await initRoomsIfEmpty()
+        log.push(`🏠 42 kamar standar berhasil dibuat ulang`)
+      }
+      log.push('✅ Pembersihan selesai! Refresh halaman.')
+      await logAction('Bersihkan Database', log.join(' | '))
+    } catch(e) {
+      log.push('❌ Error: ' + e.message)
+    }
+    setCleanResult(log.join('\n'))
+    setCleanBusy(false)
   }
 
   // ── One-time migration: old Indonesian fields → new English fields ───────
@@ -1788,6 +1889,23 @@ function Pengaturan({ user, logAction }) {
                 <p className="text-green-700">✅ Database dapat diakses. Kalau data tidak muncul, cek filter bulan di halaman masing-masing.</p>
               )}
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── DATABASE CLEANUP ── */}
+      <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+        <h3 className="font-semibold text-red-800 mb-1">🧹 Bersihkan Database (Hapus Junk Records)</h3>
+        <p className="text-xs text-red-700 mb-3">
+          Hapus ribuan record kosong/invalid (kamar tanpa nomor, penyewa tanpa nama, dll). 
+          Data valid tetap aman. Jalankan ini <strong>sekali</strong> untuk fix masalah 4759 kamar.
+        </p>
+        <Btn onClick={cleanDatabase} disabled={cleanBusy} variant="danger">
+          {cleanBusy ? '⏳ Membersihkan... (mungkin 1-2 menit)' : '🧹 Bersihkan Sekarang'}
+        </Btn>
+        {cleanResult && (
+          <div className="mt-3 bg-white border rounded-lg p-3">
+            <pre className="text-xs text-gray-700 whitespace-pre-wrap font-mono">{cleanResult}</pre>
           </div>
         )}
       </div>
