@@ -2166,28 +2166,7 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
 }
 
 
-// ═══════════════════════════════════════════════
-// ERROR BOUNDARY
-// ═══════════════════════════════════════════════
-class ErrorBoundary extends React.Component {
-  constructor(props) { super(props); this.state = {err:null}; }
-  static getDerivedStateFromError(e) { return {err:e}; }
-  render() {
-    if (this.state.err) return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-8">
-        <div className="bg-white rounded-2xl shadow-lg p-8 max-w-lg w-full text-center">
-          <p className="text-4xl mb-4">⚠️</p>
-          <h2 className="text-xl font-black text-slate-800 mb-2">Ada kesalahan di halaman ini</h2>
-          <p className="text-slate-500 text-sm mb-4">{this.state.err?.message}</p>
-          <button onClick={()=>this.setState({err:null})} className="px-4 py-2 bg-blue-600 text-white rounded-xl font-bold text-sm">Kembali</button>
-        </div>
-      </div>
-    );
-    return this.props.children;
-  }
-}
 
-// ═══════════════════════════════════════════════
 // ═══════════════════════════════════════════════
 // STATUS BAYAR PAGE
 // ═══════════════════════════════════════════════
@@ -2544,19 +2523,19 @@ export default function App() {
     </div>
   );
 
-  if (invoiceView) return <ErrorBoundary><InvoicePublicView inv={invoiceView==="notfound"?null:invoiceView}/></ErrorBoundary>;
+  if (invoiceView) return <InvoicePublicView inv={invoiceView==="notfound"?null:invoiceView}/>;
 
-  if (!role) return <ErrorBoundary><LoginScreen settings={settings||DEF} users={users||DEF_USERS} onLogin={login}/></ErrorBoundary>;
+  if (!role) return <LoginScreen settings={settings||DEF} users={users||DEF_USERS} onLogin={login}/>;
 
   const ctx = { role, user, settings, rooms, tenants, payments, expenses, audit, users,
     saveSettings:save.settings, saveRooms:save.rooms, saveTenants:save.tenants,
     savePayments:save.payments, saveExpenses:save.expenses, addAudit, saveUsers, kasTx, saveKas:save.kas };
 
   return (
-    <ErrorBoundary>
+    
     <Layout page={page} setPage={setPage} role={role} user={user} onLogout={logout}
             expenses={expenses||[]} open={open} setOpen={setOpen}>
-      <ErrorBoundary>
+      
 
       {page==="dashboard" && <Dashboard {...ctx} setPage={setPage}/>}
       {page==="rooms"     && <RoomsPage {...ctx}/>}
@@ -2570,8 +2549,8 @@ export default function App() {
 
       {page==="mutasi"    && (role==="admin"||role==="investor") && <MutasiBankKasPage {...ctx}/>}
       {page==="status"    && <StatusBayarPage {...ctx}/>}
-      </ErrorBoundary>
+      
     </Layout>
-    </ErrorBoundary>
+    
   );
 }
