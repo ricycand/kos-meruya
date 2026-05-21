@@ -133,13 +133,13 @@ function Layout({ user, onLogout, children, page, setPage }) {
   const currentMenu = allowedMenu.find(m => m.id === page) || allowedMenu[0]
 
   return (
-    <div className="min-h-screen bg-gray-100 flex">
+    <div className="h-screen bg-gray-100 flex overflow-hidden">
       {/* Mobile overlay */}
       {sidebarOpen && <div className="fixed inset-0 bg-black/40 z-20 lg:hidden" onClick={()=>setSidebarOpen(false)} />}
 
       {/* Sidebar */}
-      <aside className={`fixed top-0 left-0 h-full w-64 bg-gray-900 text-white z-30 transform transition-transform ${sidebarOpen?'translate-x-0':'-translate-x-full'} lg:translate-x-0 lg:static lg:block flex-shrink-0`}>
-        <div className="p-4 border-b border-gray-700">
+      <aside className={`fixed top-0 left-0 h-full w-64 bg-gray-900 text-white z-30 transform transition-transform flex flex-col ${sidebarOpen?'translate-x-0':'-translate-x-full'} lg:translate-x-0 lg:static lg:flex flex-shrink-0`}>
+        <div className="p-4 border-b border-gray-700 flex-shrink-0">
           <div className="flex items-center gap-3">
             <span className="text-2xl">🏠</span>
             <div>
@@ -148,7 +148,7 @@ function Layout({ user, onLogout, children, page, setPage }) {
             </div>
           </div>
         </div>
-        <nav className="p-2 overflow-y-auto h-[calc(100%-120px)]">
+        <nav className="flex-1 p-2 overflow-y-auto min-h-0">
           {allowedMenu.map(m=>(
             <button key={m.id} onClick={()=>{setPage(m.id);setSidebarOpen(false)}}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition mb-0.5 ${page===m.id?'bg-blue-600 text-white':'text-gray-300 hover:bg-gray-700'}`}>
@@ -156,7 +156,7 @@ function Layout({ user, onLogout, children, page, setPage }) {
             </button>
           ))}
         </nav>
-        <div className="absolute bottom-0 left-0 right-0 p-3 border-t border-gray-700">
+        <div className="flex-shrink-0 p-3 border-t border-gray-700">
           <button onClick={onLogout} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition">
             <span>🚪</span><span>Keluar</span>
           </button>
@@ -164,14 +164,14 @@ function Layout({ user, onLogout, children, page, setPage }) {
       </aside>
 
       {/* Main */}
-      <div className="flex-1 flex flex-col min-w-0">
-        <header className="bg-white shadow-sm px-4 py-3 flex items-center gap-3 sticky top-0 z-10">
+      <div className="flex-1 flex flex-col h-screen min-w-0 overflow-hidden">
+        <header className="bg-white shadow-sm px-4 py-3 flex items-center gap-3 flex-shrink-0">
           <button onClick={()=>setSidebarOpen(true)} className="lg:hidden p-1.5 rounded hover:bg-gray-100">
             <span className="text-xl">☰</span>
           </button>
           <h1 className="font-semibold text-gray-800">{currentMenu?.icon} {currentMenu?.label}</h1>
         </header>
-        <main className="flex-1 p-4 overflow-auto">
+        <main className="flex-1 overflow-y-auto p-4">
           {children}
         </main>
       </div>
@@ -677,7 +677,7 @@ function Pembayaran({ user, logAction }) {
   const [payments, setPayments] = useState([])
   const [tenants, setTenants]   = useState([])
   const [loading, setLoading]   = useState(true)
-  const [filter, setFilter]     = useState({ month: curMonth(), tenantId:'' })
+  const [filter, setFilter]     = useState({ month: '', tenantId:'' }) // default: semua
   const [modal, setModal]       = useState(false)
   const [form, setForm]         = useState({})
   const [busy, setBusy]         = useState(false)
@@ -692,7 +692,7 @@ function Pembayaran({ user, logAction }) {
   useEffect(()=>{ load() },[])
 
   const filtered = payments.filter(p=>
-    (!filter.month || p.month===filter.month) &&
+    (!filter.month || p.month===filter.month || p.month?.startsWith(filter.month) || p.bulan===filter.month) &&
     (!filter.tenantId || p.tenantId===filter.tenantId) &&
     p.status !== 'dibatalkan'
   )
@@ -740,7 +740,7 @@ function Pembayaran({ user, logAction }) {
     <div className="space-y-4">
       <div className="flex flex-wrap gap-3 items-end">
         <Select value={filter.month} onChange={e=>setFilter(f=>({...f,month:e.target.value}))}>
-          <option value="">Semua Bulan</option>
+          <option value="">📋 Semua Bulan</option>
           {monthOptions.map(m=><option key={m.val} value={m.val}>{m.label}</option>)}
         </Select>
         <Select value={filter.tenantId} onChange={e=>setFilter(f=>({...f,tenantId:e.target.value}))}>
@@ -1036,7 +1036,7 @@ function KasKeluar({ user, logAction }) {
   const [modal, setModal]       = useState(false)
   const [form, setForm]         = useState({})
   const [busy, setBusy]         = useState(false)
-  const [filter, setFilter]     = useState({ month: curMonth() })
+  const [filter, setFilter]     = useState({ month: '' }) // default: semua bulan
 
   const LIMIT_APPROVAL = 5000000
 
@@ -1048,8 +1048,25 @@ function KasKeluar({ user, logAction }) {
   }
   useEffect(()=>{ load() },[])
 
+  // Match date against month filter — handles yyyy-mm-dd, dd/mm/yyyy, mm/yyyy, etc.
+  const matchMonth = (dateStr, monthFilter) => {
+    if (!monthFilter) return true
+    if (!dateStr) return false
+    const [yr, mo] = monthFilter.split('-') // e.g. '2026-05'
+    // Handle yyyy-mm-dd (standard)
+    if (dateStr.startsWith(monthFilter)) return true
+    // Handle dd/mm/yyyy
+    if (dateStr.includes('/')) {
+      const parts = dateStr.split('/')
+      if (parts.length === 3) return parts[2] === yr && parts[1] === mo
+      if (parts.length === 2) return parts[1] === yr && parts[0] === mo
+    }
+    // Handle mm-yyyy or mm/yyyy
+    return dateStr.includes(`${mo}-${yr}`) || dateStr.includes(`${mo}/${yr}`)
+  }
+
   const filtered = expenses.filter(e=>
-    !filter.month || e.date?.startsWith(filter.month)
+    (!filter.month || matchMonth(e.date || e.tanggal, filter.month))
   )
   const total = filtered.filter(e=>e.status!=='ditolak').reduce((s,e)=>s+(Number(e.amount)||0),0)
 
@@ -1095,6 +1112,7 @@ function KasKeluar({ user, logAction }) {
     <div className="space-y-4">
       <div className="flex flex-wrap gap-3 items-end">
         <Select value={filter.month} onChange={e=>setFilter(f=>({...f,month:e.target.value}))}>
+          <option value="">📋 Semua Bulan</option>
           {months.map(m=><option key={m.val} value={m.val}>{m.label}</option>)}
         </Select>
         {user.role !== 'Investor' && <Btn onClick={openAdd}>+ Input Pengeluaran</Btn>}
@@ -1630,14 +1648,14 @@ export default function App() {
   return (
     // Single stable root — NEVER unmounts or swaps at top level
     // This is the fix: both views coexist in DOM, toggled via display CSS
-    <div style={{minHeight:'100vh'}}>
+    <div style={{height:'100vh',overflow:'hidden'}}>
       {/* LOGIN — shown when no user */}
-      <div style={{display: user ? 'none' : 'block'}}>
+      <div style={{display: user ? 'none' : 'block', height:'100%'}}>
         <LoginScreen onLogin={handleLogin} />
       </div>
 
       {/* MAIN APP — shown when user is set */}
-      <div style={{display: user ? 'block' : 'none'}}>
+      <div style={{display: user ? 'block' : 'none', height:'100%'}}>
         {user && (
           <Layout user={user} onLogout={handleLogout} page={page} setPage={setPage}>
             {renderPage()}
