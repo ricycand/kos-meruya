@@ -11,7 +11,7 @@ import { getDatabase, ref as dbRef, set as dbSet, get as dbGet } from "firebase/
 // ═══════════════════════════════════════════════
 // CONSTANTS & HELPERS
 // ═══════════════════════════════════════════════
-const SK = { S:"km-settings", R:"km-rooms", T:"km-tenants", P:"km-payments", E:"km-expenses", A:"km-audit" };
+const SK = { S:"km-settings", R:"km-rooms", T:"km-tenants", P:"km-payments", E:"km-expenses", A:"km-audit", K:"km-kas" };
 
 const DEF = {
   kasOperasional: 10000000,
@@ -21,6 +21,14 @@ const DEF = {
   companyInfo: { name:"Kos Meruya", address:"", phone:"", email:"" },
   bankAccounts: [],
 };
+
+const DEF_USERS = [
+  { id:"admin",  nama:"Ricy Candra",          role:"admin",    password:"1234" },
+  { id:"ricy",   nama:"Ricy Candra",           role:"investor", password:"1111" },
+  { id:"arief",  nama:"Arief Wahyudi",         role:"investor", password:"2222" },
+  { id:"ferry",  nama:"Ferry Lukas",           role:"investor", password:"3333" },
+  { id:"staff",  nama:"Karyawan Operasional",  role:"staff",    password:"0000" },
+];
 
 const uid  = () => Math.random().toString(36).substr(2,9) + Date.now().toString(36);
 const now  = () => new Date().toISOString();
@@ -128,86 +136,63 @@ function Badge({ status }) {
 // ═══════════════════════════════════════════════
 // LOGIN
 // ═══════════════════════════════════════════════
-function LoginScreen({ settings, onLogin }) {
-  const [sel, setSel]   = useState("");
-  const [pin, setPin]   = useState("");
+function LoginScreen({ settings, users, onLogin }) {
+  const [uid,  setUid]  = useState("");
+  const [pwd,  setPwd]  = useState("");
   const [show, setShow] = useState(false);
-  const [err, setErr]   = useState("");
-
-  const ROLES = [
-    { id:"admin", emoji:"👑", label:"Admin",           desc:"Ricy Candra – Akses penuh" },
-    { id:"ricy",  emoji:"💼", label:"Investor Ricy",   desc:"Ricy Candra" },
-    { id:"arief", emoji:"💼", label:"Investor Arief",  desc:"Arief Wahyudi" },
-    { id:"ferry", emoji:"🏠", label:"Investor Ferry",  desc:"Ferry Lukas – Pengelola" },
-    { id:"staff", emoji:"🖊️", label:"Staff",           desc:"Karyawan Operasional" },
-  ];
+  const [err,  setErr]  = useState("");
+  const kosName = settings?.companyInfo?.name || "Kos Meruya";
 
   const doLogin = () => {
-    if (!sel) return setErr("Pilih role terlebih dahulu");
-    const p = settings?.pins || DEF.pins;
-    if (pin !== p[sel]) { setErr("PIN salah. Coba lagi."); setPin(""); return; }
-    onLogin(sel);
+    if (!uid||!pwd) return setErr("ID dan password wajib diisi");
+    const u = (users||DEF_USERS).find(x=>x.id.toLowerCase()===uid.toLowerCase()&&x.password===pwd);
+    if (!u) { setErr("ID atau password salah"); setUid(""); setPwd(""); return; }
+    setErr(""); onLogin(u);
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 flex items-center justify-center p-4">
-      {/* Decorative blobs */}
       <div className="fixed top-0 left-0 w-96 h-96 bg-blue-600/20 rounded-full -translate-x-1/2 -translate-y-1/2 blur-3xl pointer-events-none"/>
       <div className="fixed bottom-0 right-0 w-96 h-96 bg-indigo-600/20 rounded-full translate-x-1/2 translate-y-1/2 blur-3xl pointer-events-none"/>
-
-      <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl w-full max-w-md p-8 shadow-2xl relative">
+      <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl w-full max-w-sm p-8 shadow-2xl relative">
         <div className="text-center mb-8">
           <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/30">
             <Building size={36} className="text-white"/>
           </div>
-          <h1 className="text-3xl font-black text-white tracking-tight">Kos Meruya</h1>
+          <h1 className="text-3xl font-black text-white tracking-tight">{kosName}</h1>
           <p className="text-blue-200/70 text-sm mt-1">Sistem Manajemen Properti</p>
         </div>
-
-        <div className="space-y-2 mb-6">
-          <p className="text-white/60 text-xs font-semibold uppercase tracking-widest mb-3">Pilih Role</p>
-          {ROLES.map(r => (
-            <button key={r.id} onClick={() => { setSel(r.id); setErr(""); setPin(""); }}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-all ${
-                sel===r.id ? "border-blue-400 bg-blue-500/20 shadow-lg shadow-blue-500/20" : "border-white/10 bg-white/5 hover:bg-white/10"}`}>
-              <span className="text-xl">{r.emoji}</span>
-              <div>
-                <p className="text-white text-sm font-bold">{r.label}</p>
-                <p className="text-white/50 text-xs">{r.desc}</p>
-              </div>
-              {sel===r.id && <CheckCircle size={18} className="ml-auto text-blue-400"/>}
-            </button>
-          ))}
-        </div>
-
-        {sel && (
-          <div className="space-y-3">
+        <div className="space-y-4">
+          <div>
+            <label className="text-white/60 text-xs font-semibold uppercase tracking-widest block mb-2">ID Pengguna</label>
+            <input value={uid} onChange={e=>setUid(e.target.value)} onKeyDown={e=>e.key==="Enter"&&doLogin()}
+              placeholder="Masukkan ID pengguna" autoComplete="username"
+              className="w-full bg-white/10 border border-white/20 rounded-2xl px-4 py-3 text-white placeholder-white/30 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"/>
+          </div>
+          <div>
+            <label className="text-white/60 text-xs font-semibold uppercase tracking-widest block mb-2">Password</label>
             <div className="relative">
-              <input type={show?"text":"password"} value={pin}
-                onChange={e=>setPin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&doLogin()}
-                placeholder="Masukkan PIN"
+              <input type={show?"text":"password"} value={pwd} onChange={e=>setPwd(e.target.value)}
+                onKeyDown={e=>e.key==="Enter"&&doLogin()}
+                placeholder="Masukkan password" autoComplete="current-password"
                 className="w-full bg-white/10 border border-white/20 rounded-2xl px-4 py-3 text-white placeholder-white/30 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 pr-12"/>
               <button onClick={()=>setShow(!show)} className="absolute right-4 top-3.5 text-white/40 hover:text-white/70 transition">
-                {show ? <EyeOff size={16}/> : <Eye size={16}/>}
+                {show?<EyeOff size={16}/>:<Eye size={16}/>}
               </button>
             </div>
-            {err && <p className="text-red-400 text-sm text-center">{err}</p>}
-            <button onClick={doLogin}
-              className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-bold py-3.5 rounded-2xl hover:from-blue-600 hover:to-indigo-700 transition-all shadow-lg shadow-blue-500/30 text-sm">
-              Masuk →
-            </button>
           </div>
-        )}
-
-        <p className="text-center text-white/25 text-xs mt-6">Default PIN: Admin 1234 · Investor 1111/2222/3333 · Staff 0000</p>
+          {err&&<p className="text-red-400 text-sm text-center font-medium">{err}</p>}
+          <button onClick={doLogin}
+            className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-bold py-3.5 rounded-2xl hover:from-blue-600 hover:to-indigo-700 transition-all shadow-lg shadow-blue-500/30 text-sm mt-2">
+            Masuk →
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
-// ═══════════════════════════════════════════════
-// LAYOUT
-// ═══════════════════════════════════════════════
+
 function Layout({ children, page, setPage, role, user, onLogout, expenses, open, setOpen }) {
   const NAV = [
     { id:"dashboard", icon:Home,      label:"Dashboard",       roles:["admin","investor","staff"] },
@@ -218,6 +203,7 @@ function Layout({ children, page, setPage, role, user, onLogout, expenses, open,
     { id:"invoices",  icon:FileText,  label:"Invoice",         roles:["admin","investor","staff"] },
     { id:"status",     icon:CheckCircle,label:"Status Bayar",     roles:["admin","investor","staff"] },
     { id:"mutasi",    icon:TrendingUp,label:"Mutasi Bank",      roles:["admin","investor"] },
+    { id:"status",     icon:CheckCircle,label:"Status Bayar",     roles:["admin","investor","staff"] },
     { id:"reports",   icon:BarChart2, label:"Laporan",         roles:["admin","investor"] },
     { id:"settings",  icon:Settings,  label:"Pengaturan",      roles:["admin"] },
     { id:"audit",     icon:List,      label:"Log Aktivitas",   roles:["admin","investor"] },
@@ -811,13 +797,11 @@ function PaymentsPage({ role, user, rooms, tenants, payments, savePayments, addA
         {isEdit&&<Btn onClick={openAdd}><Plus size={16}/>Input Pembayaran</Btn>}
       </div>
 
-      <div className="flex gap-2 flex-wrap">
-        {ms.map(m=>(
-          <button key={m} onClick={()=>setFMonth(m)}
-            className={`px-4 py-1.5 rounded-xl text-sm font-semibold transition-all ${fMonth===m?"bg-blue-600 text-white shadow-sm":"bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-            {mLbl(m)}
-          </button>
-        ))}
+      <div className="flex items-center gap-3">
+        <label className="text-sm font-bold text-slate-600">Periode:</label>
+        <select value={fMonth} onChange={e=>setFMonth(e.target.value)} className={inp+" w-44"}>
+          {ms.map(m=><option key={m} value={m}>{mLbl(m)}</option>)}
+        </select>
       </div>
 
       <Card>
@@ -914,7 +898,7 @@ function ExpensesPage({ role, user, expenses, saveExpenses, addAudit }) {
   const totPending  = filtered.filter(e=>e.status==="pending").reduce((s,e)=>s+e.nominal,0);
 
   const openAdd = () => {
-    setForm({kategori:"Listrik",nominal:0,deskripsi:"",tanggal:new Date().toISOString().split("T")[0],periode:tMon()});
+    setForm({kategori:"Listrik",nominal:0,deskripsi:"",tanggal:new Date().toISOString().split("T")[0],periode:tMon(),sumber:"kas"});
     setModal(true);
   };
 
@@ -949,20 +933,18 @@ function ExpensesPage({ role, user, expenses, saveExpenses, addAudit }) {
         {isEdit&&<Btn onClick={openAdd}><Plus size={16}/>Input Pengeluaran</Btn>}
       </div>
 
-      <div className="flex gap-2 flex-wrap">
-        {ms.map(m=>(
-          <button key={m} onClick={()=>setFMonth(m)}
-            className={`px-4 py-1.5 rounded-xl text-sm font-semibold transition-all ${fMonth===m?"bg-blue-600 text-white shadow-sm":"bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-            {mLbl(m)}
-          </button>
-        ))}
+      <div className="flex items-center gap-3">
+        <label className="text-sm font-bold text-slate-600">Periode:</label>
+        <select value={fMonth} onChange={e=>setFMonth(e.target.value)} className={inp+" w-44"}>
+          {ms.map(m=><option key={m} value={m}>{mLbl(m)}</option>)}
+        </select>
       </div>
 
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="border-b border-slate-100">
-              {["Tgl","Kategori","Deskripsi","Nominal","Status","Approval",""].map(h=>(
+              {["Tgl","Kategori","Deskripsi","Dari","Nominal","Status","Approval",""].map(h=>(
                 <th key={h} className="text-left px-5 py-3.5 text-xs font-bold text-slate-400 uppercase tracking-widest">{h}</th>
               ))}
             </tr></thead>
@@ -1017,6 +999,11 @@ function ExpensesPage({ role, user, expenses, saveExpenses, addAudit }) {
               <div><label className="text-xs font-bold text-slate-600 block mb-1">Tanggal</label>
                 <input type="date" className={inp} value={form.tanggal||""} onChange={e=>setForm({...form,tanggal:e.target.value})}/></div>
             </div>
+            <div><label className="text-xs font-bold text-slate-600 block mb-1">💰 Bayar dari</label>
+              <select className={inp} value={form.sumber||"kas"} onChange={e=>setForm({...form,sumber:e.target.value})}>
+                <option value="kas">💵 Kas (uang tunai operasional)</option>
+                <option value="bank">🏦 Bank (transfer dari rekening)</option>
+              </select></div>
             <div className="flex gap-2 justify-end pt-2">
               <Btn v="secondary" onClick={()=>setModal(false)}>Batal</Btn>
               <Btn onClick={save}>Simpan</Btn>
@@ -1089,13 +1076,11 @@ function ReportsPage({ rooms, tenants, payments, expenses, settings, audit }) {
         <Btn v="secondary" onClick={doPrint}><Download size={16}/>Export / Cetak PDF</Btn>
       </div>
 
-      <div className="flex gap-2 flex-wrap">
-        {ms.slice(0,12).map(m=>(
-          <button key={m} onClick={()=>setMonth(m)}
-            className={`px-4 py-1.5 rounded-xl text-sm font-semibold transition-all ${month===m?"bg-blue-600 text-white shadow-sm":"bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-            {mLbl(m)}
-          </button>
-        ))}
+      <div className="flex items-center gap-3">
+        <label className="text-sm font-bold text-slate-600">Periode Laporan:</label>
+        <select value={month} onChange={e=>setMonth(e.target.value)} className={inp+" w-44"}>
+          {ms.slice(0,12).map(m=><option key={m} value={m}>{mLbl(m)}</option>)}
+        </select>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1190,7 +1175,7 @@ function ReportsPage({ rooms, tenants, payments, expenses, settings, audit }) {
   );
 }
 // ═══════════════════════════════════════════════
-function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, saveRooms }) {
+function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, saveRooms, users, saveUsers }) {
   const [form, setForm]    = useState({...settings, kepemilikan:{...settings.kepemilikan}});
   const [pins, setPins]    = useState({...settings.pins});
   const [saved, setSaved]  = useState(false);
@@ -1464,6 +1449,47 @@ function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, 
         <Btn onClick={doSave} size="lg">Simpan Semua Perubahan</Btn>
         {saved&&<span className="text-emerald-600 font-black">✓ Tersimpan!</span>}
       </div>
+
+      {/* USER MANAGEMENT */}
+      <Card className="p-6">
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-2">
+            <Shield size={20} className="text-blue-600"/>
+            <h2 className="font-black text-slate-900">Kelola Pengguna</h2>
+          </div>
+          <Btn v="secondary" size="sm" onClick={()=>{
+            const id=prompt("ID Pengguna (huruf kecil, tanpa spasi):");
+            if(!id) return;
+            if((users||[]).find(u=>u.id===id)){alert("ID sudah ada!");return;}
+            const nama=prompt("Nama lengkap:");
+            if(!nama) return;
+            const role=prompt("Role (admin/investor/staff):");
+            if(!["admin","investor","staff"].includes(role)){alert("Role tidak valid!");return;}
+            const pwd=prompt("Password:");
+            if(!pwd) return;
+            saveUsers([...(users||[]),{id,nama,role,password:pwd}]);
+          }}><Plus size={14}/>Tambah User</Btn>
+        </div>
+        <div className="space-y-2">
+          {(users||DEF_USERS).map((u,i)=>(
+            <div key={u.id} className="flex items-center gap-3 bg-slate-50 rounded-xl p-3">
+              <div className="flex-1">
+                <span className="font-black text-slate-800 text-sm">{u.id}</span>
+                <span className="text-slate-400 text-xs ml-2">· {u.nama} · {u.role}</span>
+              </div>
+              <button onClick={()=>{
+                const pwd=prompt(`Password baru untuk ${u.id}:`);
+                if(!pwd) return;
+                saveUsers((users||[]).map(x=>x.id===u.id?{...x,password:pwd}:x));
+              }} className="text-xs px-2.5 py-1 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg font-bold transition">Ganti PW</button>
+              {u.id!==user&&<button onClick={()=>{
+                if(!confirm(`Hapus user ${u.id}?`)) return;
+                saveUsers((users||[]).filter(x=>x.id!==u.id));
+              }} className="text-xs px-2.5 py-1 bg-red-50 text-red-500 hover:bg-red-100 rounded-lg font-bold transition">Hapus</button>}
+            </div>
+          ))}
+        </div>
+      </Card>
 
       {/* RESET DATA */}
       <Card className="p-6 border-2 border-red-100">
@@ -2144,104 +2170,94 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
 
 
 // ═══════════════════════════════════════════════
+// ERROR BOUNDARY
+// ═══════════════════════════════════════════════
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = {err:null}; }
+  static getDerivedStateFromError(e) { return {err:e}; }
+  render() {
+    if (this.state.err) return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-8">
+        <div className="bg-white rounded-2xl shadow-lg p-8 max-w-lg w-full text-center">
+          <p className="text-4xl mb-4">⚠️</p>
+          <h2 className="text-xl font-black text-slate-800 mb-2">Ada kesalahan di halaman ini</h2>
+          <p className="text-slate-500 text-sm mb-4">{this.state.err?.message}</p>
+          <button onClick={()=>this.setState({err:null})} className="px-4 py-2 bg-blue-600 text-white rounded-xl font-bold text-sm">Kembali</button>
+        </div>
+      </div>
+    );
+    return this.props.children;
+  }
+}
+
+// ═══════════════════════════════════════════════
+// ═══════════════════════════════════════════════
 // STATUS BAYAR PAGE
 // ═══════════════════════════════════════════════
 function StatusBayarPage({ rooms, tenants, payments }) {
-  const today = new Date();
-  // Show last 4 months
-  const bulan = Array.from({length:4},(_,i)=>{
-    const d = new Date(today.getFullYear(), today.getMonth()-i, 1);
-    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
-  });
-
-  const activeTenants = tenants.filter(t=>t.aktif);
+  const [fMonth, setFMonth] = useState(tMon());
   const [search, setSearch] = useState("");
+  const ms = Array.from({length:12},(_,i)=>{const d=new Date();d.setMonth(d.getMonth()-i);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;});
+  const today = new Date();
+  const activeTenants = tenants.filter(t=>t.aktif);
   const filtered = activeTenants.filter(t=>!search||t.nama?.toLowerCase().includes(search.toLowerCase()));
 
-  const getStatus = (tenantId, kamarId, bulanKey) => {
-    const paid = payments.some(p=>p.penyewaId===tenantId&&p.periode===bulanKey);
-    if (paid) return "lunas";
-    // Check if overdue for this month
-    if (bulanKey === `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}`) {
-      const tenant = tenants.find(t=>t.id===tenantId);
-      if (tenant?.jatuhTempo) {
-        const due = new Date(today.getFullYear(), today.getMonth(), tenant.jatuhTempo);
-        return today > due ? "telat" : "belum";
-      }
-      return "belum";
+  const getStatus = (t) => {
+    const paid = payments.find(p=>p.penyewaId===t.id&&p.periode===fMonth);
+    if (paid) return { st:"lunas", nominal:paid.nominal };
+    const [y,m] = fMonth.split("-").map(Number);
+    const isCurrentMonth = y===today.getFullYear()&&m===today.getMonth()+1;
+    if (isCurrentMonth&&t.jatuhTempo) {
+      const due = new Date(y,m-1,t.jatuhTempo);
+      return { st:today>due?"telat":"belum", nominal:0 };
     }
-    return "telat"; // past months unpaid = telat
+    return { st:"telat", nominal:0 };
   };
 
-  const stats = {
-    lunas: activeTenants.filter(t=>getStatus(t.id,t.kamarId,bulan[0])==="lunas").length,
-    belum: activeTenants.filter(t=>getStatus(t.id,t.kamarId,bulan[0])==="belum").length,
-    telat: activeTenants.filter(t=>getStatus(t.id,t.kamarId,bulan[0])==="telat").length,
-  };
+  const stats = {lunas:0,belum:0,telat:0};
+  activeTenants.forEach(t=>{ const {st}=getStatus(t); stats[st]=(stats[st]||0)+1; });
 
   return (
     <div className="space-y-5">
       <div><h1 className="text-2xl font-black text-slate-900">Status Pembayaran</h1>
         <p className="text-slate-400 text-sm">Pantau status bayar semua penyewa</p></div>
-
-      {/* Summary */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <label className="text-sm font-bold text-slate-600">Bulan:</label>
+        <select value={fMonth} onChange={e=>setFMonth(e.target.value)} className={inp+" w-44"}>
+          {ms.map(m=><option key={m} value={m}>{mLbl(m)}</option>)}
+        </select>
+      </div>
       <div className="grid grid-cols-3 gap-4">
         {[{l:"Sudah Lunas",v:stats.lunas,c:"emerald"},{l:"Belum Bayar",v:stats.belum,c:"amber"},{l:"Terlambat",v:stats.telat,c:"red"}].map(s=>(
           <Card key={s.l} className="p-4 text-center">
             <p className={`text-3xl font-black text-${s.c}-600`}>{s.v}</p>
             <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">{s.l}</p>
-            <p className="text-xs text-slate-400">{mLbl(bulan[0])}</p>
+            <p className="text-xs text-slate-400">{mLbl(fMonth)}</p>
           </Card>
         ))}
       </div>
-
-      {/* Search */}
-      <div className="relative">
-        <Search size={15} className="absolute left-4 top-3 text-slate-400"/>
-        <input className={inp+" pl-10"} placeholder="Cari nama penyewa..." value={search} onChange={e=>setSearch(e.target.value)}/>
-      </div>
-
-      {/* Table */}
+      <div className="relative"><Search size={15} className="absolute left-4 top-3 text-slate-400"/>
+        <input className={inp+" pl-10"} placeholder="Cari nama penyewa..." value={search} onChange={e=>setSearch(e.target.value)}/></div>
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="border-b border-slate-100">
-              <th className="text-left px-5 py-3.5 text-xs font-bold text-slate-400 uppercase tracking-widest">Kamar</th>
-              <th className="text-left px-5 py-3.5 text-xs font-bold text-slate-400 uppercase tracking-widest">Nama</th>
-              <th className="text-left px-5 py-3.5 text-xs font-bold text-slate-400 uppercase tracking-widest">HP</th>
-              <th className="text-left px-5 py-3.5 text-xs font-bold text-slate-400 uppercase tracking-widest">JT</th>
-              {bulan.map(b=>(
-                <th key={b} className="text-center px-4 py-3.5 text-xs font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">{mLbl(b)}</th>
-              ))}
-            </tr></thead>
+              {["Kamar","Nama","No HP","JT",`Status ${mLbl(fMonth)}`,"Nominal"].map(h=>(
+                <th key={h} className="text-left px-5 py-3.5 text-xs font-bold text-slate-400 uppercase tracking-widest">{h}</th>
+              ))}</tr></thead>
             <tbody>
-              {filtered.length===0&&<tr><td colSpan={5+bulan.length} className="text-center py-10 text-slate-400 text-sm">Tidak ada data</td></tr>}
+              {filtered.length===0&&<tr><td colSpan={6} className="text-center py-10 text-slate-400 text-sm">Tidak ada penyewa</td></tr>}
               {filtered.map(t=>{
-                const room = rooms.find(r=>r.id===t.kamarId);
+                const room=rooms.find(r=>r.id===t.kamarId);
+                const {st,nominal}=getStatus(t);
                 return (
                   <tr key={t.id} className="border-b border-slate-50 hover:bg-slate-50/80">
                     <td className="px-5 py-3.5 font-black text-blue-600">K-{room?.nomor||"?"}</td>
                     <td className="px-5 py-3.5 font-bold text-slate-800">{t.nama}</td>
                     <td className="px-5 py-3.5 text-slate-500 text-xs">{t.hp}</td>
                     <td className="px-5 py-3.5 text-slate-500">Tgl {t.jatuhTempo}</td>
-                    {bulan.map(b=>{
-                      const st = getStatus(t.id, t.kamarId, b);
-                      const paid = payments.find(p=>p.penyewaId===t.id&&p.periode===b);
-                      return (
-                        <td key={b} className="px-4 py-3.5 text-center">
-                          <div className="flex flex-col items-center gap-0.5">
-                            <span className={`text-xs font-bold px-2.5 py-1 rounded-full whitespace-nowrap ${
-                              st==="lunas"?"bg-emerald-100 text-emerald-700":
-                              st==="telat"?"bg-red-100 text-red-600":
-                              "bg-amber-100 text-amber-700"
-                            }`}>
-                              {st==="lunas"?"✓ Lunas":st==="telat"?"✗ Telat":"⏳ Belum"}
-                            </span>
-                            {paid&&<span className="text-[10px] text-slate-400">{fRp(paid.nominal)}</span>}
-                          </div>
-                        </td>
-                      );
-                    })}
+                    <td className="px-5 py-3.5"><span className={`text-xs font-bold px-2.5 py-1 rounded-full ${st==="lunas"?"bg-emerald-100 text-emerald-700":st==="telat"?"bg-red-100 text-red-600":"bg-amber-100 text-amber-700"}`}>{st==="lunas"?"✓ Lunas":st==="telat"?"✗ Telat":"⏳ Belum"}</span></td>
+                    <td className="px-5 py-3.5 font-bold text-slate-700">{nominal?fRp(nominal):"-"}</td>
                   </tr>
                 );
               })}
@@ -2249,6 +2265,154 @@ function StatusBayarPage({ rooms, tenants, payments }) {
           </table>
         </div>
       </Card>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════
+// MUTASI BANK & KAS PAGE  
+// ═══════════════════════════════════════════════
+function MutasiBankKasPage({ settings, saveSettings, payments, expenses, rooms, tenants, addAudit, user, role, kasTx, saveKas }) {
+  const [tab, setTab]             = useState("bank");
+  const [saldoForm, setSaldoForm] = useState({bank:+(settings.saldoAwal?.jumlah)||0,kas:+(settings.saldoKas?.jumlah)||0,tanggal:settings.saldoAwal?.tanggal||""});
+  const [editSaldo, setEditSaldo] = useState(false);
+  const [fMonth, setFMonth]       = useState("");
+  const [showTrf, setShowTrf]     = useState(false);
+  const [trfForm, setTrfForm]     = useState({jumlah:0,tanggal:new Date().toISOString().split("T")[0]});
+  const ms = months6();
+  const isAdmin = role==="admin";
+
+  const saveSaldo = async () => {
+    const ns={...settings,saldoAwal:{jumlah:+saldoForm.bank,tanggal:saldoForm.tanggal},saldoKas:{jumlah:+saldoForm.kas,tanggal:saldoForm.tanggal}};
+    await saveSettings(ns);
+    await addAudit("SALDO_AWAL",`${user} set saldo bank:${fRp(saldoForm.bank)} kas:${fRp(saldoForm.kas)}`);
+    setEditSaldo(false);
+  };
+
+  const doTransfer = async () => {
+    if (!trfForm.jumlah||+trfForm.jumlah<=0) return alert("Nominal harus lebih dari 0");
+    const tx={id:uid(),tanggal:trfForm.tanggal,tipe:"masuk",jumlah:+trfForm.jumlah,deskripsi:"Transfer dari Bank",inputBy:user,inputAt:now()};
+    await saveKas([...(kasTx||[]),tx]);
+    await addAudit("TRANSFER_KAS",`${user} transfer ${fRp(trfForm.jumlah)} Bank→Kas`);
+    setShowTrf(false); setTrfForm({jumlah:0,tanggal:new Date().toISOString().split("T")[0]});
+    alert("✓ Transfer Bank → Kas berhasil!");
+  };
+
+  const bankIn  = payments.map(p=>{const room=rooms.find(r=>r.id===p.kamarId);const t=tenants.find(x=>x.id===p.penyewaId);return{id:p.id,tanggal:p.tanggal,tipe:"masuk",jumlah:+p.nominal,deskripsi:`Sewa K-${room?.nomor||"?"} – ${t?.nama||"?"}`,by:p.inputBy,periode:p.periode};});
+  const bankOut = [...expenses.filter(e=>e.status==="approved"&&e.sumber==="bank").map(e=>({id:e.id,tanggal:e.tanggal,tipe:"keluar",jumlah:+e.nominal,deskripsi:`${e.kategori}: ${e.deskripsi}`,by:e.inputBy})),
+    ...(kasTx||[]).filter(k=>k.tipe==="masuk").map(k=>({id:k.id+"_b",tanggal:k.tanggal,tipe:"keluar",jumlah:+k.jumlah,deskripsi:"Transfer ke Kas",by:k.inputBy}))];
+  const bankTx  = [...bankIn,...bankOut].sort((a,b)=>new Date(a.tanggal)-new Date(b.tanggal));
+
+  const kasIn   = (kasTx||[]).filter(k=>k.tipe==="masuk");
+  const kasOut  = expenses.filter(e=>e.status==="approved"&&(e.sumber==="kas"||!e.sumber)).map(e=>({id:e.id,tanggal:e.tanggal,tipe:"keluar",jumlah:+e.nominal,deskripsi:`${e.kategori}: ${e.deskripsi}`,by:e.inputBy}));
+  const kasTxAll= [...kasIn,...kasOut].sort((a,b)=>new Date(a.tanggal)-new Date(b.tanggal));
+
+  const filterTx = (txs) => fMonth?txs.filter(t=>t.periode===fMonth||t.tanggal?.startsWith(fMonth)):txs;
+  const calcRows = (txs,saldoAwal) => { let b=saldoAwal; return filterTx(txs).map(t=>{b+=t.tipe==="masuk"?t.jumlah:-t.jumlah;return{...t,saldo:b};}); };
+
+  const bankSaldo0 = +(settings.saldoAwal?.jumlah)||0;
+  const kasSaldo0  = +(settings.saldoKas?.jumlah)||0;
+  const bankRows   = calcRows(bankTx, bankSaldo0);
+  const kasRows    = calcRows(kasTxAll, kasSaldo0);
+  const bankSaldoAkhir = bankSaldo0+filterTx(bankTx).reduce((s,t)=>s+(t.tipe==="masuk"?t.jumlah:-t.jumlah),0);
+  const kasSaldoAkhir  = kasSaldo0 +filterTx(kasTxAll).reduce((s,t)=>s+(t.tipe==="masuk"?t.jumlah:-t.jumlah),0);
+
+  const TxTable = ({rows}) => (
+    <Card><div className="overflow-x-auto"><table className="w-full text-sm">
+      <thead><tr className="border-b border-slate-100">{["Tanggal","Deskripsi","Tipe","Jumlah","Saldo","Oleh"].map(h=>(
+        <th key={h} className="text-left px-5 py-3.5 text-xs font-bold text-slate-400 uppercase tracking-widest">{h}</th>))}</tr></thead>
+      <tbody>
+        {rows.length===0&&<tr><td colSpan={6} className="text-center py-10 text-slate-400 text-sm">Belum ada transaksi</td></tr>}
+        {rows.map(t=>(
+          <tr key={t.id} className="border-b border-slate-50 hover:bg-slate-50/80">
+            <td className="px-5 py-3 text-slate-500 text-xs whitespace-nowrap">{fD(t.tanggal)}</td>
+            <td className="px-5 py-3 font-medium text-slate-800">{t.deskripsi}</td>
+            <td className="px-5 py-3"><span className={`text-xs font-bold px-2.5 py-1 rounded-full ${t.tipe==="masuk"?"bg-emerald-100 text-emerald-700":"bg-red-100 text-red-600"}`}>{t.tipe==="masuk"?"↑ Masuk":"↓ Keluar"}</span></td>
+            <td className={`px-5 py-3 font-black ${t.tipe==="masuk"?"text-emerald-600":"text-red-600"}`}>{t.tipe==="masuk"?"+":"-"}{fRp(t.jumlah)}</td>
+            <td className="px-5 py-3 font-bold text-slate-800">{fRp(t.saldo)}</td>
+            <td className="px-5 py-3 text-slate-400 text-xs">{t.by||"-"}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table></div></Card>
+  );
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-black text-slate-900">Mutasi Keuangan</h1>
+          <p className="text-slate-400 text-sm">Rekening Bank &amp; Kas Operasional</p></div>
+        {isAdmin&&<Btn v="secondary" onClick={()=>setShowTrf(true)}>🔄 Transfer Bank → Kas</Btn>}
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[{l:"Saldo Bank",v:fRp(bankSaldoAkhir),c:"blue"},{l:"Saldo Kas",v:fRp(kasSaldoAkhir),c:"amber"},
+          {l:"Total Masuk Bank",v:fRp(filterTx(bankTx).filter(t=>t.tipe==="masuk").reduce((s,t)=>s+t.jumlah,0)),c:"emerald"},
+          {l:"Total Keluar Kas",v:fRp(filterTx(kasTxAll).filter(t=>t.tipe==="keluar").reduce((s,t)=>s+t.jumlah,0)),c:"red"}].map(s=>(
+          <Card key={s.l} className="p-4">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{s.l}</p>
+            <p className={`text-xl font-black mt-1 text-${s.c}-600`}>{s.v}</p>
+          </Card>
+        ))}
+      </div>
+
+      {isAdmin&&(
+        <Card className="p-5">
+          <div className="flex items-center justify-between mb-3">
+            <div><h2 className="font-black text-slate-900">Saldo Awal</h2></div>
+            <Btn v="secondary" size="sm" onClick={()=>setEditSaldo(!editSaldo)}><Edit size={14}/>Edit</Btn>
+          </div>
+          {editSaldo?(
+            <div className="grid grid-cols-3 gap-3 items-end">
+              <div><label className="text-xs font-bold text-slate-600 block mb-1">Bank (Rp)</label><input type="number" className={inp} value={saldoForm.bank} onChange={e=>setSaldoForm({...saldoForm,bank:e.target.value})}/></div>
+              <div><label className="text-xs font-bold text-slate-600 block mb-1">Kas (Rp)</label><input type="number" className={inp} value={saldoForm.kas} onChange={e=>setSaldoForm({...saldoForm,kas:e.target.value})}/></div>
+              <div><label className="text-xs font-bold text-slate-600 block mb-1">Per Tanggal</label><input type="date" className={inp} value={saldoForm.tanggal} onChange={e=>setSaldoForm({...saldoForm,tanggal:e.target.value})}/></div>
+              <Btn onClick={saveSaldo}>Simpan</Btn>
+            </div>
+          ):(
+            <div className="flex gap-8">
+              <div><p className="text-xs text-slate-400">Bank</p><p className="text-xl font-black text-blue-700">{fRp(+(settings.saldoAwal?.jumlah)||0)}</p></div>
+              <div><p className="text-xs text-slate-400">Kas</p><p className="text-xl font-black text-amber-700">{fRp(+(settings.saldoKas?.jumlah)||0)}</p></div>
+            </div>
+          )}
+        </Card>
+      )}
+
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex rounded-xl overflow-hidden border border-slate-200">
+          {[["bank","🏦 Bank"],["kas","💵 Kas"]].map(([t,l])=>(
+            <button key={t} onClick={()=>setTab(t)} className={`px-5 py-2 text-sm font-bold transition-all ${tab===t?"bg-blue-600 text-white":"bg-white text-slate-600 hover:bg-slate-50"}`}>{l}</button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-sm font-bold text-slate-600">Periode:</label>
+          <select value={fMonth} onChange={e=>setFMonth(e.target.value)} className={inp+" w-44"}>
+            <option value="">Semua</option>
+            {ms.map(m=><option key={m} value={m}>{mLbl(m)}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {tab==="bank"&&<TxTable rows={bankRows}/>}
+      {tab==="kas"&&<TxTable rows={kasRows}/>}
+
+      {showTrf&&(
+        <Modal title="Transfer Bank → Kas" onClose={()=>setShowTrf(false)}>
+          <div className="space-y-4">
+            <div className="bg-blue-50 rounded-xl p-4 text-sm">
+              <p>Saldo Bank: <strong>{fRp(bankSaldoAkhir)}</strong> | Saldo Kas: <strong>{fRp(kasSaldoAkhir)}</strong></p>
+            </div>
+            <div><label className="text-xs font-black text-slate-600 block mb-1">Jumlah Transfer (Rp)</label>
+              <input type="number" className={inp} value={trfForm.jumlah||0} onChange={e=>setTrfForm({...trfForm,jumlah:+e.target.value})}/></div>
+            <div><label className="text-xs font-black text-slate-600 block mb-1">Tanggal</label>
+              <input type="date" className={inp} value={trfForm.tanggal} onChange={e=>setTrfForm({...trfForm,tanggal:e.target.value})}/></div>
+            <div className="flex gap-2 justify-end">
+              <Btn v="secondary" onClick={()=>setShowTrf(false)}>Batal</Btn>
+              <Btn onClick={doTransfer}>Konfirmasi Transfer</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -2275,117 +2439,6 @@ class ErrorBoundary extends React.Component {
 }
 
 // ═══════════════════════════════════════════════
-// MUTASI BANK PAGE
-// ═══════════════════════════════════════════════
-function MutasiPage({ settings, saveSettings, payments, expenses, rooms, tenants, addAudit, user, role }) {
-  const [saldoForm, setSaldoForm] = useState({ jumlah: settings.saldoAwal?.jumlah||0, tanggal: settings.saldoAwal?.tanggal||"" });
-  const [editSaldo, setEditSaldo] = useState(false);
-  const [fMonth, setFMonth] = useState("");
-  const ms = months6();
-  const isAdmin = role==="admin";
-
-  const saveSaldo = async () => {
-    const ns = {...settings, saldoAwal:{jumlah:+saldoForm.jumlah, tanggal:saldoForm.tanggal}};
-    await saveSettings(ns);
-    await addAudit("SALDO_AWAL",`${user} set saldo awal: ${fRp(saldoForm.jumlah)} per ${saldoForm.tanggal}`);
-    setEditSaldo(false);
-  };
-
-  const allTx = [
-    ...payments.map(p=>{
-      const room=rooms.find(r=>r.id===p.kamarId);
-      const t=tenants.find(x=>x.id===p.penyewaId);
-      return {id:p.id,tanggal:p.tanggal||"",tipe:"masuk",jumlah:+p.nominal,
-        deskripsi:`Sewa K-${room?.nomor||"?"} – ${t?.nama||"?"}`,periode:p.periode,by:p.inputBy};
-    }),
-    ...expenses.filter(e=>e.status==="approved").map(e=>({
-      id:e.id,tanggal:e.tanggal||"",tipe:"keluar",jumlah:+e.nominal,
-      deskripsi:`${e.kategori}: ${e.deskripsi}`,periode:e.periode,by:e.inputBy
-    }))
-  ].sort((a,b)=>new Date(a.tanggal)-new Date(b.tanggal));
-
-  const filtered = fMonth?allTx.filter(t=>t.periode===fMonth||t.tanggal?.startsWith(fMonth)):allTx;
-  const saldoAwal = +(settings.saldoAwal?.jumlah)||0;
-
-  let running = saldoAwal;
-  const withSaldo = filtered.map(t=>{ running+=t.tipe==="masuk"?t.jumlah:-t.jumlah; return {...t,saldo:running}; });
-  const totalMasuk = filtered.filter(t=>t.tipe==="masuk").reduce((s,t)=>s+t.jumlah,0);
-  const totalKeluar = filtered.filter(t=>t.tipe==="keluar").reduce((s,t)=>s+t.jumlah,0);
-  const saldoAkhir = saldoAwal+totalMasuk-totalKeluar;
-
-  return (
-    <div className="space-y-5">
-      <div><h1 className="text-2xl font-black text-slate-900">Mutasi Bank</h1>
-        <p className="text-slate-400 text-sm">Riwayat lengkap uang masuk &amp; keluar</p></div>
-
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[{l:"Saldo Awal",v:fRp(saldoAwal),c:"slate"},{l:"Total Masuk",v:fRp(totalMasuk),c:"emerald"},
-          {l:"Total Keluar",v:fRp(totalKeluar),c:"red"},{l:"Saldo Akhir",v:fRp(saldoAkhir),c:"blue"}].map(s=>(
-          <Card key={s.l} className="p-4">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{s.l}</p>
-            <p className={`text-xl font-black mt-1 text-${s.c}-600`}>{s.v}</p>
-          </Card>
-        ))}
-      </div>
-
-      {isAdmin&&(
-        <Card className="p-5">
-          <div className="flex items-center justify-between mb-3">
-            <div><h2 className="font-black text-slate-900">Saldo Awal Bank</h2>
-              <p className="text-xs text-slate-400">Set saldo rekening saat sistem mulai dipakai</p></div>
-            <Btn v="secondary" size="sm" onClick={()=>setEditSaldo(!editSaldo)}><Edit size={14}/>Edit</Btn>
-          </div>
-          {editSaldo?(
-            <div className="flex gap-3 items-end flex-wrap">
-              <div className="flex-1"><label className="text-xs font-bold text-slate-600 block mb-1">Jumlah (Rp)</label>
-                <input type="number" className={inp} value={saldoForm.jumlah} onChange={e=>setSaldoForm({...saldoForm,jumlah:e.target.value})}/></div>
-              <div><label className="text-xs font-bold text-slate-600 block mb-1">Per Tanggal</label>
-                <input type="date" className={inp} value={saldoForm.tanggal} onChange={e=>setSaldoForm({...saldoForm,tanggal:e.target.value})}/></div>
-              <Btn onClick={saveSaldo}>Simpan</Btn>
-            </div>
-          ):(
-            <p className="text-2xl font-black text-slate-800">{fRp(+(settings.saldoAwal?.jumlah)||0)}
-              {settings.saldoAwal?.tanggal&&<span className="text-sm font-normal text-slate-400 ml-2">per {fD(settings.saldoAwal.tanggal)}</span>}
-            </p>
-          )}
-        </Card>
-      )}
-
-      <div className="flex flex-wrap gap-2">
-        <button onClick={()=>setFMonth("")} className={`px-4 py-1.5 rounded-xl text-sm font-semibold transition-all ${!fMonth?"bg-blue-600 text-white":"bg-white border border-slate-200 text-slate-600"}`}>Semua</button>
-        {ms.map(m=>(
-          <button key={m} onClick={()=>setFMonth(m)} className={`px-4 py-1.5 rounded-xl text-sm font-semibold transition-all ${fMonth===m?"bg-blue-600 text-white":"bg-white border border-slate-200 text-slate-600"}`}>{mLbl(m)}</button>
-        ))}
-      </div>
-
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead><tr className="border-b border-slate-100">
-              {["Tanggal","Deskripsi","Tipe","Jumlah","Saldo Berjalan","Oleh"].map(h=>(
-                <th key={h} className="text-left px-5 py-3.5 text-xs font-bold text-slate-400 uppercase tracking-widest">{h}</th>
-              ))}
-            </tr></thead>
-            <tbody>
-              {withSaldo.length===0&&<tr><td colSpan={6} className="text-center py-10 text-slate-400 text-sm">Belum ada transaksi</td></tr>}
-              {withSaldo.map(t=>(
-                <tr key={t.id} className="border-b border-slate-50 hover:bg-slate-50/80">
-                  <td className="px-5 py-3 text-slate-500 text-xs whitespace-nowrap">{fD(t.tanggal)}</td>
-                  <td className="px-5 py-3 font-medium text-slate-800">{t.deskripsi}</td>
-                  <td className="px-5 py-3"><span className={`text-xs font-bold px-2.5 py-1 rounded-full ${t.tipe==="masuk"?"bg-emerald-100 text-emerald-700":"bg-red-100 text-red-600"}`}>{t.tipe==="masuk"?"↑ Masuk":"↓ Keluar"}</span></td>
-                  <td className={`px-5 py-3 font-black ${t.tipe==="masuk"?"text-emerald-600":"text-red-600"}`}>{t.tipe==="masuk"?"+":"-"}{fRp(t.jumlah)}</td>
-                  <td className="px-5 py-3 font-bold text-slate-800">{fRp(t.saldo)}</td>
-                  <td className="px-5 py-3 text-slate-400 text-xs">{t.by||"-"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-    </div>
-  );
-}
-
 export default function App() {
   const [role,        setRole]    = useState(null);
   const [user,        setUser]    = useState(null);
@@ -2422,6 +2475,8 @@ export default function App() {
       setPayments( await store.get(SK.P)||[]);
       setExpenses( await store.get(SK.E)||[]);
       setAudit(    await store.get(SK.A)||[]);
+      const u = await store.get("km-users"); if(u&&u.length) setUsers(u);
+      setKasTx(await store.get(SK.K)||[]);
       setLoading(false);
     })();
   },[]);
@@ -2432,6 +2487,7 @@ export default function App() {
     tenants:  async (d)=>{ setTenants(d);  await store.set(SK.T,d); },
     payments: async (d)=>{ setPayments(d); await store.set(SK.P,d); },
     expenses: async (d)=>{ setExpenses(d); await store.set(SK.E,d); },
+    kas:      async (d)=>{ setKasTx(d);   await store.set(SK.K,d); },
   };
 
   const resetData = async (key) => {
@@ -2469,10 +2525,16 @@ export default function App() {
     } catch {}
   },[]);
 
-  const login = (u) => {
-    const r = u==="admin"?"admin":["ricy","arief","ferry"].includes(u)?"investor":"staff";
-    setUser(u); setRole(r);
-    try { localStorage.setItem("km-session", JSON.stringify({u,r})); } catch {}
+  const roleLabel = (userId) => {
+    const u = users.find(x=>x.id===userId);
+    return u ? `${u.nama} (${u.role})` : userId;
+  };
+
+  const saveUsers = async (data) => { setUsers(data); await store.set("km-users", data); };
+
+  const login = (userObj) => {
+    setUser(userObj.id); setRole(userObj.role);
+    try { localStorage.setItem("km-session", JSON.stringify({u:userObj.id,r:userObj.role})); } catch {}
   };
 
   const logout = () => {
@@ -2493,11 +2555,11 @@ export default function App() {
   // Public invoice view — no login required
   if (invoiceView) return <InvoicePublicView inv={invoiceView==="notfound"?null:invoiceView}/>;
 
-  if (!role) return <LoginScreen settings={settings} onLogin={login}/>;
+  if (!role) return <LoginScreen settings={settings} users={users} onLogin={login}/>;
 
-  const ctx = { role, user, settings, rooms, tenants, payments, expenses, audit,
+  const ctx = { role, user, settings, rooms, tenants, payments, expenses, audit, users,
     saveSettings:save.settings, saveRooms:save.rooms, saveTenants:save.tenants,
-    savePayments:save.payments, saveExpenses:save.expenses, addAudit };
+    savePayments:save.payments, saveExpenses:save.expenses, addAudit, saveUsers, kasTx, saveKas:save.kas };
 
   return (
     <Layout page={page} setPage={setPage} role={role} user={user} onLogout={logout}
@@ -2513,8 +2575,9 @@ export default function App() {
       {page==="reports"   && (role==="admin"||role==="investor") && <ReportsPage {...ctx}/>}
       {page==="settings"  && role==="admin" && <SettingsPage {...ctx} onReset={resetData}/>}
       {page==="audit"     && (role==="admin"||role==="investor") && <AuditPage {...ctx}/>}
+
+      {page==="mutasi"    && (role==="admin"||role==="investor") && <MutasiBankKasPage {...ctx}/>}
       {page==="status"    && <StatusBayarPage {...ctx}/>}
-      {page==="mutasi"    && (role==="admin"||role==="investor") && <MutasiPage {...ctx}/>}
       </ErrorBoundary>
     </Layout>
   );
