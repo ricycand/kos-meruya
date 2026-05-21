@@ -5,8 +5,7 @@ import {
   Download, Eye, EyeOff, ChevronLeft, Bell, Search,
   Building, Menu, RefreshCw, CheckCircle, Clock, Shield, FileText, Link2, TrendingUp
 } from "lucide-react";
-import { initializeApp } from "firebase/app";
-import { getDatabase, ref as dbRef, set as dbSet, get as dbGet } from "firebase/database";
+// Firebase REST API - no SDK needed
 
 // ═══════════════════════════════════════════════
 // CONSTANTS & HELPERS
@@ -41,36 +40,29 @@ const months6 = () => Array.from({length:6},(_,i)=>{ const d=new Date(); d.setMo
 // ═══════════════════════════════════════════════
 // FIREBASE DATABASE
 // ═══════════════════════════════════════════════
-const firebaseConfig = {
-  apiKey: "AIzaSyDubp1ZVhVNEEsEKldcnnMX4fEewfyGncg",
-  authDomain: "kos-meruya.firebaseapp.com",
-  databaseURL: "https://kos-meruya-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "kos-meruya",
-  storageBucket: "kos-meruya.firebasestorage.app",
-  messagingSenderId: "428242398218",
-  appId: "1:428242398218:web:8a241d14021006b91543f3"
-};
-let fbApp, db;
-try {
-  fbApp = initializeApp(firebaseConfig);
-  db = getDatabase(fbApp);
-} catch(e) { console.error("Firebase init error:", e); }
+// Firebase config no longer needed (using REST API)
+// Firebase REST API — simple fetch, no SDK, no WebSocket
+const FB = "https://kos-meruya-default-rtdb.asia-southeast1.firebasedatabase.app";
+const toKey = (k) => k.replace(/-/g,"_");
 
 const store = {
   get: async (k) => {
-    if (!db) return null;
     try {
-      const snap = await dbGet(dbRef(db, k.replace(/-/g,"_")));
-      if (!snap.exists()) return null;
-      const v = snap.val();
-      return typeof v === "string" ? JSON.parse(v) : v;
+      const r = await fetch(`${FB}/${toKey(k)}.json`);
+      if (!r.ok) return null;
+      const data = await r.json();
+      if (data === null || data === undefined) return null;
+      return typeof data === "string" ? JSON.parse(data) : data;
     } catch(e) { console.error("DB get:", k, e); return null; }
   },
   set: async (k, v) => {
-    if (!db) return false;
     try {
-      await dbSet(dbRef(db, k.replace(/-/g,"_")), JSON.stringify(v));
-      return true;
+      const r = await fetch(`${FB}/${toKey(k)}.json`, {
+        method: "PUT",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify(JSON.stringify(v))
+      });
+      return r.ok;
     } catch(e) { console.error("DB set:", k, e); return false; }
   }
 };
@@ -2446,7 +2438,7 @@ export default function App() {
     const loadTimeout = setTimeout(()=>{
       console.warn("Firebase timeout — loading with defaults");
       setLoading(false);
-    }, 5000);
+    }, 6000);
 
     (async()=>{
       setLoading(true);
