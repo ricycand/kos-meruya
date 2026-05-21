@@ -33,6 +33,59 @@ const fmtDate = d => { if(!d) return '-'; const dt=new Date(d+'T00:00:00'); retu
 const toObj  = raw => raw && typeof raw==='object' ? Object.entries(raw).map(([id,v])=>({id,...v})) : []
 const curMonth = () => { const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}` }
 
+// ─── Field normalizers — handle old Indonesian & new English field names ──────
+const normRoom = r => ({
+  ...r,
+  no:     r.no     || r.nomor     || r.nomorKamar || '',
+  floor:  r.floor  || r.lantai    || 1,
+  type:   r.type   || r.tipe      || 'Standar',
+  price:  r.price  || r.harga     || r.hargaSewa  || 1500000,
+  status: r.status || 'kosong',
+})
+const normTenant = t => ({
+  ...t,
+  name:      t.name      || t.nama        || '',
+  phone:     t.phone     || t.hp          || t.telepon || '',
+  room:      t.room      || t.kamar       || t.nomorKamar || t.noKamar || '',
+  dueDate:   t.dueDate   || t.tanggalJT   || t.jatuhTempo || t.tglJT || '',
+  startDate: t.startDate || t.tanggalMasuk|| t.tglMasuk  || '',
+  rent:      t.rent      || t.sewa        || t.hargaSewa  || 0,
+  deposit:   t.deposit   || t.depositAwal || t.dp         || 0,
+  status:    t.status    || 'aktif',
+})
+const normPayment = p => ({
+  ...p,
+  tenantId:   p.tenantId   || p.penyewaId  || '',
+  tenantName: p.tenantName || p.namaPenyewa|| p.nama || '',
+  tenantRoom: p.tenantRoom || p.kamar      || p.nomorKamar || p.kamarId || '',
+  month:      p.month      || p.bulan      || '',
+  amount:     Number(p.amount  || p.nominal || p.jumlah || 0),
+  date:       p.date       || p.tanggal    || p.tanggalBayar || '',
+  type:       p.type       || p.tipe       || 'sewa',
+  status:     p.status     || 'lunas',
+})
+const normExpense = e => ({
+  ...e,
+  desc:     e.desc     || e.deskripsi || e.keterangan || e.nama || '',
+  amount:   Number(e.amount   || e.nominal   || e.jumlah    || 0),
+  date:     e.date     || e.tanggal   || e.tgl        || '',
+  category: e.category || e.kategori  || 'operasional',
+  source:   e.source   || e.sumber    || 'kas',
+  status:   e.status   || 'approved',
+  notes:    e.notes    || e.catatan   || '',
+})
+const normInvoice = i => ({
+  ...i,
+  invNo:      i.invNo      || i.invoiceNo  || i.nomorInvoice || '',
+  tenantId:   i.tenantId   || i.penyewaId  || '',
+  tenantName: i.tenantName || i.namaPenyewa|| '',
+  tenantRoom: i.tenantRoom || i.kamar      || '',
+  month:      i.month      || i.bulan      || '',
+  amount:     Number(i.amount     || i.nominal    || i.jumlah || 0),
+  dueDate:    i.dueDate    || i.jatuhTempo || i.tglJT || '',
+  status:     i.status     || 'belum_lunas',
+})
+
 // ─── Room initialization helper ───────────────────────────────────────────────
 async function initRoomsIfEmpty() {
   const existing = await fbGet('km_rooms')
@@ -268,7 +321,12 @@ function Dashboard({ user, logAction }) {
       const [rooms, tenants, payments, expenses] = await Promise.all([
         fbGet('km_rooms'), fbGet('km_tenants'), fbGet('km_payments'), fbGet('km_expenses')
       ])
-      setData({ rooms:rooms||{}, tenants:tenants||{}, payments:payments||{}, expenses:expenses||{} })
+      setData({
+        rooms:    rooms    || {},
+        tenants:  tenants  || {},
+        payments: payments || {},
+        expenses: expenses || {},
+      })
       setLoading(false)
     }
     load()
@@ -276,10 +334,10 @@ function Dashboard({ user, logAction }) {
 
   if (loading) return <div className="flex items-center justify-center h-40 text-gray-500">Memuat data...</div>
 
-  const roomList    = toObj(data.rooms)
-  const tenantList  = toObj(data.tenants)
-  const payList     = toObj(data.payments)
-  const expList     = toObj(data.expenses)
+  const roomList    = toObj(data.rooms).map(normRoom)
+  const tenantList  = toObj(data.tenants).map(normTenant)
+  const payList     = toObj(data.payments).map(normPayment)
+  const expList     = toObj(data.expenses).map(normExpense)
 
   const totalRooms  = roomList.length || 42
   const occupied    = roomList.filter(r=>r.status==='isi').length
@@ -428,7 +486,10 @@ function Kamar({ user, logAction }) {
       const d2 = await fbGet('km_rooms')
       setRooms(d2 || {})
     } else {
-      setRooms(data)
+      // Normalize field names (handle old Indonesian format)
+      const normalized = {}
+      Object.entries(data).forEach(([k,v]) => { normalized[k] = normRoom(v) })
+      setRooms(normalized)
     }
     setLoading(false)
   }
@@ -535,8 +596,8 @@ function Penyewa({ user, logAction }) {
   const load = async () => {
     setLoading(true)
     const [t, r] = await Promise.all([fbGet('km_tenants'), fbGet('km_rooms')])
-    setTenants(toObj(t))
-    setRooms(toObj(r).filter(r=>r.status==='kosong'))
+    setTenants(toObj(t).map(normTenant))
+    setRooms(toObj(r).map(normRoom).filter(r=>r.status==='kosong'))
     setLoading(false)
   }
   useEffect(()=>{ load() },[])
@@ -685,8 +746,8 @@ function Pembayaran({ user, logAction }) {
   const load = async () => {
     setLoading(true)
     const [p, t] = await Promise.all([fbGet('km_payments'), fbGet('km_tenants')])
-    setPayments(toObj(p))
-    setTenants(toObj(t).filter(t=>t.status!=='keluar'))
+    setPayments(toObj(p).map(normPayment))
+    setTenants(toObj(t).map(normTenant).filter(t=>t.status!=='keluar'))
     setLoading(false)
   }
   useEffect(()=>{ load() },[])
@@ -828,8 +889,8 @@ function Invoice({ user, logAction }) {
   const load = async () => {
     setLoading(true)
     const [inv, t] = await Promise.all([fbGet('km_invoices'), fbGet('km_tenants')])
-    setInvoices(toObj(inv).sort((a,b)=>b.createdAt?.localeCompare(a.createdAt)||0))
-    setTenants(toObj(t).filter(t=>t.status!=='keluar'))
+    setInvoices(toObj(inv).map(normInvoice).sort((a,b)=>b.createdAt?.localeCompare(a.createdAt)||0))
+    setTenants(toObj(t).map(normTenant).filter(t=>t.status!=='keluar'))
     setLoading(false)
   }
   useEffect(()=>{ load() },[])
@@ -960,8 +1021,8 @@ function StatusBayar({ user }) {
   const load = async () => {
     setLoading(true)
     const [t, p] = await Promise.all([fbGet('km_tenants'), fbGet('km_payments')])
-    setTenants(toObj(t).filter(t=>t.status!=='keluar'))
-    setPayments(toObj(p))
+    setTenants(toObj(t).map(normTenant).filter(t=>t.status!=='keluar'))
+    setPayments(toObj(p).map(normPayment))
     setLoading(false)
   }
   useEffect(()=>{ load() },[])
@@ -1043,7 +1104,7 @@ function KasKeluar({ user, logAction }) {
   const load = async () => {
     setLoading(true)
     const data = await fbGet('km_expenses')
-    setExpenses(toObj(data).sort((a,b)=>b.createdAt?.localeCompare(a.createdAt)||0))
+    setExpenses(toObj(data).map(normExpense).sort((a,b)=>b.createdAt?.localeCompare(a.createdAt)||0))
     setLoading(false)
   }
   useEffect(()=>{ load() },[])
@@ -1342,8 +1403,8 @@ function Laporan({ user }) {
   const load = async () => {
     setLoading(true)
     const [p, e] = await Promise.all([fbGet('km_payments'), fbGet('km_expenses')])
-    setPayments(toObj(p))
-    setExpenses(toObj(e))
+    setPayments(toObj(p).map(normPayment))
+    setExpenses(toObj(e).map(normExpense))
     setLoading(false)
   }
   useEffect(()=>{ load() },[])
@@ -1494,6 +1555,65 @@ function Pengaturan({ user, logAction }) {
     await fbDelete(`km_users/${u.id}`)
     await logAction('Hapus User', u.name)
     load()
+  }
+
+  // ── One-time migration: old Indonesian fields → new English fields ───────
+  const [migrateBusy, setMigrateBusy] = useState(false)
+  const [migrateResult, setMigrateResult] = useState('')
+
+  const migrateData = async () => {
+    if (!confirm('Migrasi akan MENULIS ULANG semua data ke format baru (field bahasa Inggris). Data lama tetap aman. Lanjutkan?')) return
+    setMigrateBusy(true)
+    setMigrateResult('')
+    const log = []
+    try {
+      // Migrate rooms
+      const rawRooms = await fbGet('km_rooms')
+      if (rawRooms) {
+        const migrated = {}
+        Object.entries(rawRooms).forEach(([k,v]) => { migrated[k] = normRoom(v) })
+        await fbSet('km_rooms', migrated)
+        log.push(`✅ ${Object.keys(migrated).length} kamar dimigrasikan`)
+      }
+      // Migrate tenants
+      const rawTenants = await fbGet('km_tenants')
+      if (rawTenants) {
+        for (const [k,v] of Object.entries(rawTenants)) {
+          await fbPatch(`km_tenants/${k}`, normTenant(v))
+        }
+        log.push(`✅ ${Object.keys(rawTenants).length} penyewa dimigrasikan`)
+      }
+      // Migrate payments
+      const rawPay = await fbGet('km_payments')
+      if (rawPay) {
+        for (const [k,v] of Object.entries(rawPay)) {
+          await fbPatch(`km_payments/${k}`, normPayment(v))
+        }
+        log.push(`✅ ${Object.keys(rawPay).length} pembayaran dimigrasikan`)
+      }
+      // Migrate expenses
+      const rawExp = await fbGet('km_expenses')
+      if (rawExp) {
+        for (const [k,v] of Object.entries(rawExp)) {
+          await fbPatch(`km_expenses/${k}`, normExpense(v))
+        }
+        log.push(`✅ ${Object.keys(rawExp).length} pengeluaran dimigrasikan`)
+      }
+      // Migrate invoices
+      const rawInv = await fbGet('km_invoices')
+      if (rawInv) {
+        for (const [k,v] of Object.entries(rawInv)) {
+          await fbPatch(`km_invoices/${k}`, normInvoice(v))
+        }
+        log.push(`✅ ${Object.keys(rawInv).length} invoice dimigrasikan`)
+      }
+      log.push('🎉 Migrasi selesai! Refresh halaman untuk melihat data.')
+      await logAction('Migrasi Database', log.join(' | '))
+    } catch(e) {
+      log.push('❌ Error: ' + e.message)
+    }
+    setMigrateResult(log.join('\n'))
+    setMigrateBusy(false)
   }
 
   // ── Database Diagnostics ──────────────────────────────────────────────────
@@ -1668,6 +1788,23 @@ function Pengaturan({ user, logAction }) {
                 <p className="text-green-700">✅ Database dapat diakses. Kalau data tidak muncul, cek filter bulan di halaman masing-masing.</p>
               )}
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── DATA MIGRATION ── */}
+      <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
+        <h3 className="font-semibold text-orange-800 mb-1">🔄 Migrasi Data (App Lama → App Baru)</h3>
+        <p className="text-xs text-orange-700 mb-3">
+          Data lama pakai field bahasa Indonesia (<code className="bg-orange-100 px-1 rounded">nama, hp, nomor, lantai, nominal...</code>).
+          Migrasi akan tulis ulang ke format baru sekali saja — data tidak hilang.
+        </p>
+        <Btn onClick={migrateData} disabled={migrateBusy} variant="warning">
+          {migrateBusy ? '⏳ Migrasi berjalan...' : '🔄 Jalankan Migrasi Sekarang'}
+        </Btn>
+        {migrateResult && (
+          <div className="mt-3 bg-white border rounded-lg p-3">
+            <pre className="text-xs text-gray-700 whitespace-pre-wrap font-mono">{migrateResult}</pre>
           </div>
         )}
       </div>
