@@ -707,13 +707,11 @@ function PaymentsPage({ role, user, rooms, tenants, payments, savePayments, addA
         {isEdit&&<Btn onClick={openAdd}><Plus size={16}/>Input Pembayaran</Btn>}
       </div>
 
-      <div className="flex gap-2 flex-wrap">
-        {ms.map(m=>(
-          <button key={m} onClick={()=>setFMonth(m)}
-            className={`px-4 py-1.5 rounded-xl text-sm font-semibold transition-all ${fMonth===m?"bg-blue-600 text-white shadow-sm":"bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-            {mLbl(m)}
-          </button>
-        ))}
+      <div className="flex items-center gap-3">
+        <label className="text-sm font-bold text-slate-600">Periode:</label>
+        <select value={fMonth} onChange={e=>setFMonth(e.target.value)} className={inp+" w-44"}>
+          {ms.map(m=><option key={m} value={m}>{mLbl(m)}</option>)}
+        </select>
       </div>
 
       <Card>
@@ -845,13 +843,11 @@ function ExpensesPage({ role, user, expenses, saveExpenses, addAudit }) {
         {isEdit&&<Btn onClick={openAdd}><Plus size={16}/>Input Pengeluaran</Btn>}
       </div>
 
-      <div className="flex gap-2 flex-wrap">
-        {ms.map(m=>(
-          <button key={m} onClick={()=>setFMonth(m)}
-            className={`px-4 py-1.5 rounded-xl text-sm font-semibold transition-all ${fMonth===m?"bg-blue-600 text-white shadow-sm":"bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-            {mLbl(m)}
-          </button>
-        ))}
+      <div className="flex items-center gap-3">
+        <label className="text-sm font-bold text-slate-600">Periode:</label>
+        <select value={fMonth} onChange={e=>setFMonth(e.target.value)} className={inp+" w-44"}>
+          {ms.map(m=><option key={m} value={m}>{mLbl(m)}</option>)}
+        </select>
       </div>
 
       <Card>
@@ -927,7 +923,7 @@ function ExpensesPage({ role, user, expenses, saveExpenses, addAudit }) {
 // ═══════════════════════════════════════════════
 // REPORTS PAGE
 // ═══════════════════════════════════════════════
-function ReportsPage({ rooms, tenants, payments, expenses, settings }) {
+function ReportsPage({ rooms, tenants, payments, expenses, settings, audit }) {
   const [month, setMonth] = useState(tMon());
   const ms = months6().concat(Array.from({length:6},(_,i)=>{ const d=new Date(); d.setMonth(d.getMonth()-6-i); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; }));
 
@@ -985,13 +981,11 @@ function ReportsPage({ rooms, tenants, payments, expenses, settings }) {
         <Btn v="secondary" onClick={doPrint}><Download size={16}/>Export / Cetak PDF</Btn>
       </div>
 
-      <div className="flex gap-2 flex-wrap">
-        {ms.slice(0,12).map(m=>(
-          <button key={m} onClick={()=>setMonth(m)}
-            className={`px-4 py-1.5 rounded-xl text-sm font-semibold transition-all ${month===m?"bg-blue-600 text-white shadow-sm":"bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-            {mLbl(m)}
-          </button>
-        ))}
+      <div className="flex items-center gap-3">
+        <label className="text-sm font-bold text-slate-600">Periode Laporan:</label>
+        <select value={month} onChange={e=>setMonth(e.target.value)} className={inp+" w-44"}>
+          {ms.slice(0,12).map(m=><option key={m} value={m}>{mLbl(m)}</option>)}
+        </select>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1964,8 +1958,8 @@ export default function App() {
     setLoading(false);
     (async()=>{
       try{
-        const s=await store.get(SK.S);if(s)setSettings(s);else store.set(SK.S,DEF);
-        const r=await store.get(SK.R);if(r&&r.length>0)setRooms(r);else{const nr=mkRooms();setRooms(nr);store.set(SK.R,nr);}
+        const s=await store.get(SK.S);setSettings(s||DEF);
+        const r=await store.get(SK.R);if(r&&r.length>0)setRooms(r);else setRooms(mkRooms());
         const res=await Promise.allSettled([store.get(SK.T),store.get(SK.P),store.get(SK.E),store.get(SK.A),store.get("km-users"),store.get(SK.K)]);
         if(res[0].value)setTenants(res[0].value);
         if(res[1].value)setPayments(res[1].value);
