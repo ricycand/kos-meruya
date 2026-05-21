@@ -50,11 +50,15 @@ const firebaseConfig = {
   messagingSenderId: "428242398218",
   appId: "1:428242398218:web:8a241d14021006b91543f3"
 };
-const fbApp = initializeApp(firebaseConfig);
-const db = getDatabase(fbApp);
+let fbApp, db;
+try {
+  fbApp = initializeApp(firebaseConfig);
+  db = getDatabase(fbApp);
+} catch(e) { console.error("Firebase init error:", e); }
 
 const store = {
   get: async (k) => {
+    if (!db) return null;
     try {
       const snap = await dbGet(dbRef(db, k.replace(/-/g,"_")));
       if (!snap.exists()) return null;
@@ -63,6 +67,7 @@ const store = {
     } catch(e) { console.error("DB get:", k, e); return null; }
   },
   set: async (k, v) => {
+    if (!db) return false;
     try {
       await dbSet(dbRef(db, k.replace(/-/g,"_")), JSON.stringify(v));
       return true;
@@ -2437,6 +2442,12 @@ export default function App() {
   const [audit,    setAudit]    = useState([]);
 
   useEffect(()=>{
+    // Safety timeout — force stop loading after 8 seconds
+    const loadTimeout = setTimeout(()=>{
+      console.warn("Firebase timeout — loading with defaults");
+      setLoading(false);
+    }, 8000);
+
     (async()=>{
       setLoading(true);
 
@@ -2459,6 +2470,7 @@ export default function App() {
       setAudit(    await store.get(SK.A)||[]);
       const u = await store.get("km-users"); if(u&&u.length) setUsers(u);
       setKasTx(await store.get(SK.K)||[]);
+      clearTimeout(loadTimeout);
       setLoading(false);
     })();
   },[]);
