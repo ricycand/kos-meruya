@@ -1642,12 +1642,26 @@ function Pengaturan({ user, logAction }) {
         }
         log.push(`🧾 Invoice: ${kept} valid disimpan, ${deleted} junk dihapus`)
       }
-      // After cleanup, rebuild 42 rooms if less than 42 remain
+      // After cleanup, rebuild all 42 rooms regardless of existing count
       const remaining = await fbGet('km_rooms')
       const remainCount = remaining ? Object.keys(remaining).length : 0
       if (remainCount < 42) {
-        await initRoomsIfEmpty()
-        log.push(`🏠 42 kamar standar berhasil dibuat ulang`)
+        // Force build all missing rooms
+        const floors = [{f:1,c:12},{f:2,c:12},{f:3,c:12},{f:4,c:6}]
+        let created = 0
+        for (const {f,c} of floors) {
+          for (let i=1;i<=c;i++) {
+            const key = `K_${f}${String(i).padStart(2,'0')}`
+            const no  = `K-${f}${String(i).padStart(2,'0')}`
+            // Only create if not already exist
+            const exists = remaining && remaining[key]
+            if (!exists) {
+              await fbPatch(`km_rooms/${key}`, { no, floor:f, status:'kosong', price:1500000, type:'Standar' })
+              created++
+            }
+          }
+        }
+        if (created > 0) log.push(`🏠 ${created} kamar baru berhasil dibuat (total jadi 42)`)
       }
       log.push('✅ Pembersihan selesai! Refresh halaman.')
       await logAction('Bersihkan Database', log.join(' | '))
