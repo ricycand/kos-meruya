@@ -375,13 +375,7 @@ function Dashboard({ role, user, rooms, tenants, payments, expenses, settings, s
               const room=rooms.find(r=>r.id===t.kamarId);
               const due=new Date(today.getFullYear(),today.getMonth(),t.jatuhTempo);
               const sisa=Math.ceil((due-today)/(1000*60*60*24));
-              const msg=`Halo Kak ${t.nama} 👋
-
-Mengingatkan tagihan sewa Kamar ${room?.nomor} bulan ini jatuh tempo *${due.toLocaleDateString("id-ID",{day:"numeric",month:"long",year:"numeric"})}*.
-
-Mohon segera lakukan pembayaran.
-
-_Manajemen Kos Meruya_`;
+              const waMsg="Halo "+t.nama+", tagihan sewa Kamar "+(room?.nomor||"?")+" jatuh tempo tgl "+t.jatuhTempo+". Mohon segera bayar. Terima kasih.";
               return (
                 <div key={t.id} className="flex items-center justify-between py-3 border-b border-slate-100 last:border-0 gap-3">
                   <div>
@@ -389,10 +383,8 @@ _Manajemen Kos Meruya_`;
                     <p className="text-xs text-slate-400">Kamar {room?.nomor} · <span className="font-bold text-blue-600">{sisa===0?"Hari ini!":sisa+" hari lagi"}</span></p>
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={()=>{navigator.clipboard.writeText(msg).catch(()=>{});alert("Pesan tersalin!
-
-Kirim ke WA: "+t.hp);}} className="px-3 py-1.5 bg-green-600 text-white text-xs font-bold rounded-xl">💬 WA</button>
-                    <button onClick={()=>setPage("invoices")} className="px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-xl">📋 Invoice</button>
+                    <button onClick={()=>{navigator.clipboard.writeText(waMsg).catch(()=>{});alert("Tersalin!");}} className="px-3 py-1.5 bg-green-600 text-white text-xs font-bold rounded-xl">WA</button>
+                    <button onClick={()=>setPage("invoices")} className="px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-xl">Invoice</button>
                   </div>
                 </div>
               );
