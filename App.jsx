@@ -2446,7 +2446,7 @@ export default function App() {
     const loadTimeout = setTimeout(()=>{
       console.warn("Firebase timeout — loading with defaults");
       setLoading(false);
-    }, 8000);
+    }, 5000);
 
     (async()=>{
       setLoading(true);
@@ -2536,28 +2536,29 @@ export default function App() {
     try { localStorage.removeItem("km-session"); } catch {}
   };
 
+  // ── SAFE RENDER ──
   if (loading) return (
     <div className="h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-blue-950">
       <div className="text-center">
         <div className="w-14 h-14 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"/>
-        <p className="text-blue-200 font-bold text-lg">Kos Meruya</p>
+        <p className="text-blue-200 font-bold text-lg">{settings?.companyInfo?.name||"Kos Meruya"}</p>
         <p className="text-slate-400 text-sm mt-1">Memuat data...</p>
       </div>
     </div>
   );
 
-  // Public invoice view — no login required
-  if (invoiceView) return <InvoicePublicView inv={invoiceView==="notfound"?null:invoiceView}/>;
+  if (invoiceView) return <ErrorBoundary><InvoicePublicView inv={invoiceView==="notfound"?null:invoiceView}/></ErrorBoundary>;
 
-  if (!role) return <LoginScreen settings={settings} users={users} onLogin={login}/>;
+  if (!role) return <ErrorBoundary><LoginScreen settings={settings||DEF} users={users||DEF_USERS} onLogin={login}/></ErrorBoundary>;
 
   const ctx = { role, user, settings, rooms, tenants, payments, expenses, audit, users,
     saveSettings:save.settings, saveRooms:save.rooms, saveTenants:save.tenants,
     savePayments:save.payments, saveExpenses:save.expenses, addAudit, saveUsers, kasTx, saveKas:save.kas };
 
   return (
+    <ErrorBoundary>
     <Layout page={page} setPage={setPage} role={role} user={user} onLogout={logout}
-            expenses={expenses} open={open} setOpen={setOpen}>
+            expenses={expenses||[]} open={open} setOpen={setOpen}>
       <ErrorBoundary>
 
       {page==="dashboard" && <Dashboard {...ctx} setPage={setPage}/>}
@@ -2574,5 +2575,6 @@ export default function App() {
       {page==="status"    && <StatusBayarPage {...ctx}/>}
       </ErrorBoundary>
     </Layout>
+    </ErrorBoundary>
   );
 }
