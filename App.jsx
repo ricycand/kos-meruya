@@ -32,33 +32,28 @@ const months6 = () => Array.from({length:6},(_,i)=>{ const d=new Date(); d.setMo
 // ═══════════════════════════════════════════════
 // STORAGE — robust personal storage with retry
 // ═══════════════════════════════════════════════
-const store = {
-  get: async (k) => {
-    for (let i=0; i<3; i++) {
-      try {
-        const r = await store.get(k);
-        if (r && r.value !== undefined) return JSON.parse(r.value);
-        return null;
-      } catch (e) {
-        if (i===2) return null;
-        await new Promise(res=>setTimeout(res,200));
-      }
-    }
-    return null;
+const FB="https://kos-meruya-default-rtdb.asia-southeast1.firebasedatabase.app";
+const toKey=(k)=>k.replace(/-/g,"_");
+const store={
+  get:async(k)=>{
+    try{
+      const r=await fetch(`${FB}/${toKey(k)}.json`);
+      if(!r.ok)return null;
+      const d=await r.json();
+      if(d===null||d===undefined)return null;
+      // Data stored as JSON string by old SDK
+      return typeof d==="string"?JSON.parse(d):d;
+    }catch(e){console.error("GET",k,e);return null;}
   },
-  set: async (k,v) => {
-    for (let i=0; i<3; i++) {
-      try {
-        await store.set(k, JSON.stringify(v));
-        // Verify write succeeded
-        const check = await store.get(k);
-        if (check && check.value !== undefined) return true;
-      } catch(e) {
-        if (i===2) { console.error("STORAGE WRITE FAILED:", k, e); return false; }
-        await new Promise(res=>setTimeout(res,300));
-      }
-    }
-    return false;
+  set:async(k,v)=>{
+    try{
+      const r=await fetch(`${FB}/${toKey(k)}.json`,{
+        method:"PUT",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify(JSON.stringify(v))
+      });
+      return r.ok;
+    }catch(e){console.error("SET",k,e);return false;}
   }
 };
 
