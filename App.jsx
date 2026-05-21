@@ -2266,25 +2266,26 @@ export default function App() {
 
   const logout = () => { setUser(null); setRole(null); setPage("dashboard"); };
 
-  if (loading) return (
-    <div className="h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-blue-950">
-      <div className="text-center">
-        <div className="w-14 h-14 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"/>
-        <p className="text-blue-200 font-bold text-lg">Kos Meruya</p>
-        <p className="text-slate-400 text-sm mt-1">Memuat data...</p>
-      </div>
-    </div>
-  );
 
-  // Public invoice view — no login required
-  if (invoiceView) return <InvoicePublicView inv={invoiceView==="notfound"?null:invoiceView}/>;
-
-  if (!role) return <LoginScreen settings={settings} users={users} onLogin={login}/>;
 
   const ctx = { role, user, settings, rooms, tenants, payments, expenses, audit,
     users, kasTx, saveSettings:save.settings, saveRooms:save.rooms,
     saveTenants:save.tenants, savePayments:save.payments,
     saveExpenses:save.expenses, addAudit, saveUsers, saveKas };
+
+  if (loading) return (
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#0f172a"}}>
+      <div style={{textAlign:"center"}}>
+        <div style={{width:48,height:48,border:"4px solid #3b82f6",borderTopColor:"transparent",borderRadius:"50%",animation:"spin 1s linear infinite",margin:"0 auto 16px"}}/>
+        <p style={{color:"#93c5fd",fontWeight:"bold"}}>{kosName}</p>
+        <p style={{color:"#64748b",fontSize:14}}>Memuat...</p>
+        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      </div>
+    </div>
+  );
+
+  if (invoiceView) return <InvoicePublicView inv={invoiceView==="notfound"?null:invoiceView}/>;
+  if (!role) return <LoginScreen settings={settings} users={users} onLogin={login}/>;
 
   return (
     <Layout page={page} setPage={setPage} role={role} user={user} onLogout={logout}
