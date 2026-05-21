@@ -2434,38 +2434,43 @@ export default function App() {
   const [audit,    setAudit]    = useState([]);
 
   useEffect(()=>{
-    // Safety timeout — force stop loading after 8 seconds
-    const loadTimeout = setTimeout(()=>{
-      console.warn("Firebase timeout — loading with defaults");
-      setLoading(false);
-    }, 6000);
+    // Check hash for invoice view
+    const hash = window.location.hash;
+    if (hash.startsWith("#inv-")) {
+      const id = hash.replace("#inv-","");
+      store.get(`km-inv-${id}`).then(inv=>{
+        setIV(inv||"notfound"); setLoading(false);
+      }).catch(()=>setLoading(false));
+      return;
+    }
+
+    // Show app immediately, load data in background
+    setLoading(false);
 
     (async()=>{
-      setLoading(true);
+      try {
+        const s = await store.get(SK.S);
+        if (s) setSettings(s); else await store.set(SK.S, DEF);
 
-      // Check hash for public invoice view
-      const hash = window.location.hash;
-      if (hash.startsWith("#inv-")) {
-        const id = hash.replace("#inv-","");
-        const inv = await store.get(`km-inv-${id}`);
-        setIV(inv || "notfound");
-        setLoading(false);
-        return;
-      }
+        const r = await store.get(SK.R);
+        if (r&&r.length>0) setRooms(r);
+        else { const nr=mkRooms(); setRooms(nr); await store.set(SK.R,nr); }
 
-      let s = await store.get(SK.S); if (!s) { s=DEF; await store.set(SK.S,s); }
-      let r = await store.get(SK.R); if (!r||r.length===0) { r=mkRooms(); await store.set(SK.R,r); }
-      setSettings(s); setRooms(r);
-      setTenants(  await store.get(SK.T)||[]);
-      setPayments( await store.get(SK.P)||[]);
-      setExpenses( await store.get(SK.E)||[]);
-      setAudit(    await store.get(SK.A)||[]);
-      const u = await store.get("km-users"); if(u&&u.length) setUsers(u);
-      setKasTx(await store.get(SK.K)||[]);
-      clearTimeout(loadTimeout);
-      setLoading(false);
+        const results = await Promise.allSettled([
+          store.get(SK.T), store.get(SK.P), store.get(SK.E),
+          store.get(SK.A), store.get("km-users"), store.get(SK.K)
+        ]);
+        const [t,p,e,a,u,k] = results;
+        if (t.value) setTenants(t.value);
+        if (p.value) setPayments(p.value);
+        if (e.value) setExpenses(e.value);
+        if (a.value) setAudit(a.value);
+        if (u.value?.length) setUsers(u.value);
+        if (k.value) setKasTx(k.value);
+      } catch(err) { console.error("Load error:", err); }
     })();
   },[]);
+
 
   const save = {
     settings: async (d)=>{ setSettings(d); await store.set(SK.S,d); },
