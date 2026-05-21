@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Home, Grid, Users, CreditCard, Wallet, BarChart2, Settings,
   List, LogOut, Plus, Edit, Trash2, Check, X, AlertTriangle,
   Download, Eye, EyeOff, ChevronLeft, Bell, Search,
-  Building, Menu, RefreshCw, CheckCircle, Clock, Shield, FileText, Link2
+  Building, Menu, RefreshCw, CheckCircle, Clock, Shield, FileText, Link2, TrendingUp
 } from "lucide-react";
 import { initializeApp } from "firebase/app";
 import { getDatabase, ref as dbRef, set as dbSet, get as dbGet } from "firebase/database";
@@ -216,6 +216,8 @@ function Layout({ children, page, setPage, role, user, onLogout, expenses, open,
     { id:"payments",  icon:CreditCard,label:"Pembayaran",      roles:["admin","investor","staff"] },
     { id:"expenses",  icon:Wallet,    label:"Kas & Keluar",    roles:["admin","investor","staff"] },
     { id:"invoices",  icon:FileText,  label:"Invoice",         roles:["admin","investor","staff"] },
+    { id:"status",     icon:CheckCircle,label:"Status Bayar",     roles:["admin","investor","staff"] },
+    { id:"mutasi",    icon:TrendingUp,label:"Mutasi Bank",      roles:["admin","investor"] },
     { id:"reports",   icon:BarChart2, label:"Laporan",         roles:["admin","investor"] },
     { id:"settings",  icon:Settings,  label:"Pengaturan",      roles:["admin"] },
     { id:"audit",     icon:List,      label:"Log Aktivitas",   roles:["admin","investor"] },
@@ -1589,7 +1591,7 @@ function InvoicePublicView({ inv }) {
 // ═══════════════════════════════════════════════
 // INVOICES PAGE
 // ═══════════════════════════════════════════════
-function InvoicesPage({ role, user, rooms, tenants, settings, addAudit, audit }) {
+function InvoicesPage({ role, user, rooms, tenants, settings, addAudit, audit, payments, savePayments }) {
   const [invoices, setInvs]  = useState([]);
   const [modal,    setModal] = useState(null);
   const [form,     setForm]  = useState({});
@@ -1756,10 +1758,52 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
   };
 
   const markPaid = async (inv) => {
+    // Konfirmasi dulu
+    const konfirmasi = window.confirm(
+      `✅ KONFIRMASI PELUNASAN\n\n` +
+      `Penyewa  : ${inv.tenantName}\n` +
+      `Kamar    : ${inv.roomNomor}\n` +
+      `Periode  : ${inv.periode?.label||"-"}\n` +
+      `Nominal  : ${fRp(inv.nominal)}\n` +
+      `Invoice  : ${inv.invoiceNo}\n\n` +
+      `Yakin uang sudah MASUK ke rekening?\n` +
+      `Pembayaran akan otomatis tercatat di sistem.`
+    );
+    if (!konfirmasi) return;
+
+    // Cek apakah sudah ada pembayaran untuk periode ini
+    const sudahAda = payments.find(p=>p.penyewaId===inv.tenantId&&p.periode===inv.targetMonth);
+    if (sudahAda) {
+      const lanjut = window.confirm(
+        `⚠️ Perhatian!\n\nSudah ada record pembayaran untuk ${inv.tenantName} bulan ${mLbl(inv.targetMonth)}.\n\nTetap tandai lunas? (Tidak akan duplikasi pembayaran)`
+      );
+      if (!lanjut) return;
+    } else {
+      // Buat record pembayaran otomatis
+      const room = rooms.find(r=>r.nomor===inv.roomNomor)||rooms.find(r=>r.id===inv.kamarId);
+      const newPay = {
+        id: uid(),
+        kamarId: room?.id||"",
+        penyewaId: inv.tenantId||"",
+        periode: inv.targetMonth||tMon(),
+        nominal: +inv.nominal,
+        metode: "transfer",
+        bank: "",
+        pengirim: inv.tenantName,
+        referensi: inv.invoiceNo,
+        tanggal: new Date().toISOString().split("T")[0],
+        catatan: `Otomatis dari Invoice ${inv.invoiceNo}`,
+        inputBy: user,
+        inputAt: now()
+      };
+      await savePayments([...payments, newPay]);
+    }
+
+    // Update status invoice
     const updated = invoices.map(i=>i.id===inv.id?{...i,paid:true,paidAt:now(),paidBy:user}:i);
     await saveInvs(updated);
     await store.set(`km-inv-${inv.id}`, {...inv,paid:true,paidAt:now(),paidBy:user}, true);
-    await addAudit("INV_LUNAS",`${inv.invoiceNo} – ${inv.tenantName} ditandai LUNAS oleh ${user}`);
+    await addAudit("INV_LUNAS",`${inv.invoiceNo} – ${inv.tenantName} LUNAS oleh ${user}. Pembayaran ${fRp(inv.nominal)} otomatis dicatat.`);
   };
 
   const showShare = (inv) => setShowWA({ inv, msg: genWAMsg(inv) });
@@ -2042,6 +2086,249 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
 }
 
 
+// ═══════════════════════════════════════════════
+// STATUS BAYAR PAGE
+// ═══════════════════════════════════════════════
+function StatusBayarPage({ rooms, tenants, payments }) {
+  const today = new Date();
+  // Show last 4 months
+  const bulan = Array.from({length:4},(_,i)=>{
+    const d = new Date(today.getFullYear(), today.getMonth()-i, 1);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+  });
+
+  const activeTenants = tenants.filter(t=>t.aktif);
+  const [search, setSearch] = useState("");
+  const filtered = activeTenants.filter(t=>!search||t.nama?.toLowerCase().includes(search.toLowerCase()));
+
+  const getStatus = (tenantId, kamarId, bulanKey) => {
+    const paid = payments.some(p=>p.penyewaId===tenantId&&p.periode===bulanKey);
+    if (paid) return "lunas";
+    // Check if overdue for this month
+    if (bulanKey === `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}`) {
+      const tenant = tenants.find(t=>t.id===tenantId);
+      if (tenant?.jatuhTempo) {
+        const due = new Date(today.getFullYear(), today.getMonth(), tenant.jatuhTempo);
+        return today > due ? "telat" : "belum";
+      }
+      return "belum";
+    }
+    return "telat"; // past months unpaid = telat
+  };
+
+  const stats = {
+    lunas: activeTenants.filter(t=>getStatus(t.id,t.kamarId,bulan[0])==="lunas").length,
+    belum: activeTenants.filter(t=>getStatus(t.id,t.kamarId,bulan[0])==="belum").length,
+    telat: activeTenants.filter(t=>getStatus(t.id,t.kamarId,bulan[0])==="telat").length,
+  };
+
+  return (
+    <div className="space-y-5">
+      <div><h1 className="text-2xl font-black text-slate-900">Status Pembayaran</h1>
+        <p className="text-slate-400 text-sm">Pantau status bayar semua penyewa</p></div>
+
+      {/* Summary */}
+      <div className="grid grid-cols-3 gap-4">
+        {[{l:"Sudah Lunas",v:stats.lunas,c:"emerald"},{l:"Belum Bayar",v:stats.belum,c:"amber"},{l:"Terlambat",v:stats.telat,c:"red"}].map(s=>(
+          <Card key={s.l} className="p-4 text-center">
+            <p className={`text-3xl font-black text-${s.c}-600`}>{s.v}</p>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">{s.l}</p>
+            <p className="text-xs text-slate-400">{mLbl(bulan[0])}</p>
+          </Card>
+        ))}
+      </div>
+
+      {/* Search */}
+      <div className="relative">
+        <Search size={15} className="absolute left-4 top-3 text-slate-400"/>
+        <input className={inp+" pl-10"} placeholder="Cari nama penyewa..." value={search} onChange={e=>setSearch(e.target.value)}/>
+      </div>
+
+      {/* Table */}
+      <Card>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr className="border-b border-slate-100">
+              <th className="text-left px-5 py-3.5 text-xs font-bold text-slate-400 uppercase tracking-widest">Kamar</th>
+              <th className="text-left px-5 py-3.5 text-xs font-bold text-slate-400 uppercase tracking-widest">Nama</th>
+              <th className="text-left px-5 py-3.5 text-xs font-bold text-slate-400 uppercase tracking-widest">HP</th>
+              <th className="text-left px-5 py-3.5 text-xs font-bold text-slate-400 uppercase tracking-widest">JT</th>
+              {bulan.map(b=>(
+                <th key={b} className="text-center px-4 py-3.5 text-xs font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">{mLbl(b)}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {filtered.length===0&&<tr><td colSpan={5+bulan.length} className="text-center py-10 text-slate-400 text-sm">Tidak ada data</td></tr>}
+              {filtered.map(t=>{
+                const room = rooms.find(r=>r.id===t.kamarId);
+                return (
+                  <tr key={t.id} className="border-b border-slate-50 hover:bg-slate-50/80">
+                    <td className="px-5 py-3.5 font-black text-blue-600">K-{room?.nomor||"?"}</td>
+                    <td className="px-5 py-3.5 font-bold text-slate-800">{t.nama}</td>
+                    <td className="px-5 py-3.5 text-slate-500 text-xs">{t.hp}</td>
+                    <td className="px-5 py-3.5 text-slate-500">Tgl {t.jatuhTempo}</td>
+                    {bulan.map(b=>{
+                      const st = getStatus(t.id, t.kamarId, b);
+                      const paid = payments.find(p=>p.penyewaId===t.id&&p.periode===b);
+                      return (
+                        <td key={b} className="px-4 py-3.5 text-center">
+                          <div className="flex flex-col items-center gap-0.5">
+                            <span className={`text-xs font-bold px-2.5 py-1 rounded-full whitespace-nowrap ${
+                              st==="lunas"?"bg-emerald-100 text-emerald-700":
+                              st==="telat"?"bg-red-100 text-red-600":
+                              "bg-amber-100 text-amber-700"
+                            }`}>
+                              {st==="lunas"?"✓ Lunas":st==="telat"?"✗ Telat":"⏳ Belum"}
+                            </span>
+                            {paid&&<span className="text-[10px] text-slate-400">{fRp(paid.nominal)}</span>}
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════
+// ERROR BOUNDARY
+// ═══════════════════════════════════════════════
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = {err:null}; }
+  static getDerivedStateFromError(e) { return {err:e}; }
+  render() {
+    if (this.state.err) return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-8">
+        <div className="bg-white rounded-2xl shadow-lg p-8 max-w-lg w-full text-center">
+          <p className="text-4xl mb-4">⚠️</p>
+          <h2 className="text-xl font-black text-slate-800 mb-2">Ada kesalahan di halaman ini</h2>
+          <p className="text-slate-500 text-sm mb-4">{this.state.err?.message}</p>
+          <button onClick={()=>this.setState({err:null})} className="px-4 py-2 bg-blue-600 text-white rounded-xl font-bold text-sm">Kembali</button>
+        </div>
+      </div>
+    );
+    return this.props.children;
+  }
+}
+
+// ═══════════════════════════════════════════════
+// MUTASI BANK PAGE
+// ═══════════════════════════════════════════════
+function MutasiPage({ settings, saveSettings, payments, expenses, rooms, tenants, addAudit, user, role }) {
+  const [saldoForm, setSaldoForm] = useState({ jumlah: settings.saldoAwal?.jumlah||0, tanggal: settings.saldoAwal?.tanggal||"" });
+  const [editSaldo, setEditSaldo] = useState(false);
+  const [fMonth, setFMonth] = useState("");
+  const ms = months6();
+  const isAdmin = role==="admin";
+
+  const saveSaldo = async () => {
+    const ns = {...settings, saldoAwal:{jumlah:+saldoForm.jumlah, tanggal:saldoForm.tanggal}};
+    await saveSettings(ns);
+    await addAudit("SALDO_AWAL",`${user} set saldo awal: ${fRp(saldoForm.jumlah)} per ${saldoForm.tanggal}`);
+    setEditSaldo(false);
+  };
+
+  const allTx = [
+    ...payments.map(p=>{
+      const room=rooms.find(r=>r.id===p.kamarId);
+      const t=tenants.find(x=>x.id===p.penyewaId);
+      return {id:p.id,tanggal:p.tanggal||"",tipe:"masuk",jumlah:+p.nominal,
+        deskripsi:`Sewa K-${room?.nomor||"?"} – ${t?.nama||"?"}`,periode:p.periode,by:p.inputBy};
+    }),
+    ...expenses.filter(e=>e.status==="approved").map(e=>({
+      id:e.id,tanggal:e.tanggal||"",tipe:"keluar",jumlah:+e.nominal,
+      deskripsi:`${e.kategori}: ${e.deskripsi}`,periode:e.periode,by:e.inputBy
+    }))
+  ].sort((a,b)=>new Date(a.tanggal)-new Date(b.tanggal));
+
+  const filtered = fMonth?allTx.filter(t=>t.periode===fMonth||t.tanggal?.startsWith(fMonth)):allTx;
+  const saldoAwal = +(settings.saldoAwal?.jumlah)||0;
+
+  let running = saldoAwal;
+  const withSaldo = filtered.map(t=>{ running+=t.tipe==="masuk"?t.jumlah:-t.jumlah; return {...t,saldo:running}; });
+  const totalMasuk = filtered.filter(t=>t.tipe==="masuk").reduce((s,t)=>s+t.jumlah,0);
+  const totalKeluar = filtered.filter(t=>t.tipe==="keluar").reduce((s,t)=>s+t.jumlah,0);
+  const saldoAkhir = saldoAwal+totalMasuk-totalKeluar;
+
+  return (
+    <div className="space-y-5">
+      <div><h1 className="text-2xl font-black text-slate-900">Mutasi Bank</h1>
+        <p className="text-slate-400 text-sm">Riwayat lengkap uang masuk &amp; keluar</p></div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[{l:"Saldo Awal",v:fRp(saldoAwal),c:"slate"},{l:"Total Masuk",v:fRp(totalMasuk),c:"emerald"},
+          {l:"Total Keluar",v:fRp(totalKeluar),c:"red"},{l:"Saldo Akhir",v:fRp(saldoAkhir),c:"blue"}].map(s=>(
+          <Card key={s.l} className="p-4">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{s.l}</p>
+            <p className={`text-xl font-black mt-1 text-${s.c}-600`}>{s.v}</p>
+          </Card>
+        ))}
+      </div>
+
+      {isAdmin&&(
+        <Card className="p-5">
+          <div className="flex items-center justify-between mb-3">
+            <div><h2 className="font-black text-slate-900">Saldo Awal Bank</h2>
+              <p className="text-xs text-slate-400">Set saldo rekening saat sistem mulai dipakai</p></div>
+            <Btn v="secondary" size="sm" onClick={()=>setEditSaldo(!editSaldo)}><Edit size={14}/>Edit</Btn>
+          </div>
+          {editSaldo?(
+            <div className="flex gap-3 items-end flex-wrap">
+              <div className="flex-1"><label className="text-xs font-bold text-slate-600 block mb-1">Jumlah (Rp)</label>
+                <input type="number" className={inp} value={saldoForm.jumlah} onChange={e=>setSaldoForm({...saldoForm,jumlah:e.target.value})}/></div>
+              <div><label className="text-xs font-bold text-slate-600 block mb-1">Per Tanggal</label>
+                <input type="date" className={inp} value={saldoForm.tanggal} onChange={e=>setSaldoForm({...saldoForm,tanggal:e.target.value})}/></div>
+              <Btn onClick={saveSaldo}>Simpan</Btn>
+            </div>
+          ):(
+            <p className="text-2xl font-black text-slate-800">{fRp(+(settings.saldoAwal?.jumlah)||0)}
+              {settings.saldoAwal?.tanggal&&<span className="text-sm font-normal text-slate-400 ml-2">per {fD(settings.saldoAwal.tanggal)}</span>}
+            </p>
+          )}
+        </Card>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        <button onClick={()=>setFMonth("")} className={`px-4 py-1.5 rounded-xl text-sm font-semibold transition-all ${!fMonth?"bg-blue-600 text-white":"bg-white border border-slate-200 text-slate-600"}`}>Semua</button>
+        {ms.map(m=>(
+          <button key={m} onClick={()=>setFMonth(m)} className={`px-4 py-1.5 rounded-xl text-sm font-semibold transition-all ${fMonth===m?"bg-blue-600 text-white":"bg-white border border-slate-200 text-slate-600"}`}>{mLbl(m)}</button>
+        ))}
+      </div>
+
+      <Card>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr className="border-b border-slate-100">
+              {["Tanggal","Deskripsi","Tipe","Jumlah","Saldo Berjalan","Oleh"].map(h=>(
+                <th key={h} className="text-left px-5 py-3.5 text-xs font-bold text-slate-400 uppercase tracking-widest">{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {withSaldo.length===0&&<tr><td colSpan={6} className="text-center py-10 text-slate-400 text-sm">Belum ada transaksi</td></tr>}
+              {withSaldo.map(t=>(
+                <tr key={t.id} className="border-b border-slate-50 hover:bg-slate-50/80">
+                  <td className="px-5 py-3 text-slate-500 text-xs whitespace-nowrap">{fD(t.tanggal)}</td>
+                  <td className="px-5 py-3 font-medium text-slate-800">{t.deskripsi}</td>
+                  <td className="px-5 py-3"><span className={`text-xs font-bold px-2.5 py-1 rounded-full ${t.tipe==="masuk"?"bg-emerald-100 text-emerald-700":"bg-red-100 text-red-600"}`}>{t.tipe==="masuk"?"↑ Masuk":"↓ Keluar"}</span></td>
+                  <td className={`px-5 py-3 font-black ${t.tipe==="masuk"?"text-emerald-600":"text-red-600"}`}>{t.tipe==="masuk"?"+":"-"}{fRp(t.jumlah)}</td>
+                  <td className="px-5 py-3 font-bold text-slate-800">{fRp(t.saldo)}</td>
+                  <td className="px-5 py-3 text-slate-400 text-xs">{t.by||"-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 export default function App() {
   const [role,        setRole]    = useState(null);
   const [user,        setUser]    = useState(null);
@@ -2117,12 +2404,24 @@ export default function App() {
     await store.set(SK.A,updated);
   },[user,role]);
 
+  // Restore session on load
+  useEffect(()=>{
+    try {
+      const saved = localStorage.getItem("km-session");
+      if (saved) { const {u,r}=JSON.parse(saved); if(u&&r){setUser(u);setRole(r);} }
+    } catch {}
+  },[]);
+
   const login = (u) => {
     const r = u==="admin"?"admin":["ricy","arief","ferry"].includes(u)?"investor":"staff";
     setUser(u); setRole(r);
+    try { localStorage.setItem("km-session", JSON.stringify({u,r})); } catch {}
   };
 
-  const logout = () => { setUser(null); setRole(null); setPage("dashboard"); };
+  const logout = () => {
+    setUser(null); setRole(null); setPage("dashboard");
+    try { localStorage.removeItem("km-session"); } catch {}
+  };
 
   if (loading) return (
     <div className="h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-blue-950">
@@ -2146,6 +2445,7 @@ export default function App() {
   return (
     <Layout page={page} setPage={setPage} role={role} user={user} onLogout={logout}
             expenses={expenses} open={open} setOpen={setOpen}>
+      <ErrorBoundary>
 
       {page==="dashboard" && <Dashboard {...ctx} setPage={setPage}/>}
       {page==="rooms"     && <RoomsPage {...ctx}/>}
@@ -2156,6 +2456,9 @@ export default function App() {
       {page==="reports"   && (role==="admin"||role==="investor") && <ReportsPage {...ctx}/>}
       {page==="settings"  && role==="admin" && <SettingsPage {...ctx} onReset={resetData}/>}
       {page==="audit"     && (role==="admin"||role==="investor") && <AuditPage {...ctx}/>}
+      {page==="status"    && <StatusBayarPage {...ctx}/>}
+      {page==="mutasi"    && (role==="admin"||role==="investor") && <MutasiPage {...ctx}/>}
+      </ErrorBoundary>
     </Layout>
   );
 }
