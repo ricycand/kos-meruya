@@ -970,6 +970,7 @@ function ReportsPage({ rooms, tenants, payments, expenses, settings, audit }) {
   const bulanList = [{v:"01",l:"Januari"},{v:"02",l:"Februari"},{v:"03",l:"Maret"},{v:"04",l:"April"},{v:"05",l:"Mei"},{v:"06",l:"Juni"},{v:"07",l:"Juli"},{v:"08",l:"Agustus"},{v:"09",l:"September"},{v:"10",l:"Oktober"},{v:"11",l:"November"},{v:"12",l:"Desember"}];
   const tahunList = Array.from({length:3},(_,i)=>String(new Date().getFullYear()-i));
 
+  const mPay  = payments.filter(p=>p.periode===month);
   const mExp  = expenses.filter(e=>e.periode===month&&e.status==="approved");
   const totIn = mPay.reduce((s,p)=>s+p.nominal,0);
   const totEx = mExp.reduce((s,e)=>s+e.nominal,0);
