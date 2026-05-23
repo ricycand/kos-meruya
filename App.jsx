@@ -14,6 +14,13 @@ const store={
 };
 
 const SK={S:"km-settings",R:"km-rooms",T:"km-tenants",P:"km-payments",E:"km-expenses",A:"km-audit",K:"km-kas"};
+// Read session synchronously — prevents React DOM reconciliation errors
+const _sess = (()=>{
+  try{const s=localStorage.getItem("km-session");if(s){const{u,r}=JSON.parse(s);if(u&&r)return{u,r};}}catch{}
+  return null;
+})();
+
+
 
 const DEF_USERS=[{id:"admin",nama:"Ricy Candra",role:"admin",password:"1234"},{id:"ricy",nama:"Ricy Candra",role:"investor",password:"1111"},{id:"arief",nama:"Arief Wahyudi",role:"investor",password:"2222"},{id:"ferry",nama:"Ferry Lukas",role:"investor",password:"3333"},{id:"staff",nama:"Karyawan Operasional",role:"staff",password:"0000"}];
 
@@ -2061,8 +2068,8 @@ function MutasiBankKasPage({ settings, saveSettings, payments, expenses, rooms, 
 }
 
 export default function App() {
-  const [role,    setRole]    = useState(null);
-  const [user,    setUser]    = useState(null);
+  const [role,    setRole]    = useState(_sess?.r||null);
+  const [user,    setUser]    = useState(_sess?.u||null);
   const [page,    setPage]    = useState("dashboard");
   const [open,    setOpen]    = useState(true);
   const [settings,setSettings]= useState(DEF);
@@ -2074,11 +2081,6 @@ export default function App() {
   const [users,   setUsers]   = useState(DEF_USERS);
   const [kasTx,   setKasTx]   = useState([]);
   const [iv,      setIV]      = useState(null);
-
-  // Restore session
-  useEffect(()=>{
-    try{const s=localStorage.getItem("km-session");if(s){const{u,r}=JSON.parse(s);if(u&&r){setUser(u);setRole(r);}}}catch{}
-  },[]);
 
   // Load data in background (never blocks UI)
   useEffect(()=>{
