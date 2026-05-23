@@ -1604,7 +1604,7 @@ function InvoicesPage({ role, user, rooms, tenants, settings, addAudit, audit })
   const [showWA,   setShowWA]= useState(null);
   const [previewInv,setPreviewInv]=useState(null);
   const [multiModal,setMultiModal]=useState(null);
-  const [multiMonths,setMultiMonths]=useState(3);e preview
+  const [multiMonths,setMultiMonths]=useState(3);
 
   const isEdit = role==="admin"||role==="staff";
 
