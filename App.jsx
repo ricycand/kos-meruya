@@ -1,2111 +1,2199 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from "react";
+import {
+  Home, Grid, Users, CreditCard, Wallet, BarChart2, Settings,
+  List, LogOut, Plus, Edit, Trash2, Check, X, AlertTriangle,
+  Download, Eye, EyeOff, ChevronLeft, Bell, Search,
+  Building, Menu, RefreshCw, CheckCircle, Clock, Shield, FileText, Link2, TrendingUp
+} from "lucide-react";
 
-// ─── Firebase REST ────────────────────────────────────────────────────────────
-const DB = 'https://kos-meruya-default-rtdb.asia-southeast1.firebasedatabase.app'
-const fbGet    = (p)    => fetch(`${DB}/${p}.json`).then(r=>r.json()).catch(()=>null)
-const fbSet    = (p,d)  => fetch(`${DB}/${p}.json`,{method:'PUT',body:JSON.stringify(d)})
-const fbPush   = (p,d)  => fetch(`${DB}/${p}.json`,{method:'POST',body:JSON.stringify(d)}).then(r=>r.json()).then(j=>j?.name)
-const fbPatch  = (p,d)  => fetch(`${DB}/${p}.json`,{method:'PATCH',body:JSON.stringify(d)})
-const fbDelete = (p)    => fetch(`${DB}/${p}.json`,{method:'DELETE'})
+const FB="https://kos-meruya-default-rtdb.asia-southeast1.firebasedatabase.app";
+const toKey=(k)=>k.replace(/-/g,"_");
+const store={
+  get:async(k)=>{try{const r=await fetch(`${FB}/${toKey(k)}.json`);if(!r.ok)return null;const d=await r.json();if(d===null)return null;return typeof d==="string"?JSON.parse(d):d;}catch{return null;}},
+  set:async(k,v)=>{try{const r=await fetch(`${FB}/${toKey(k)}.json`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(JSON.stringify(v))});return r.ok;}catch{return false;}}
+};
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-const USERS = {
-  admin: { pw:'1234', role:'Admin',    name:'Admin' },
-  ricy:  { pw:'1111', role:'Investor', name:'Ricy Candra' },
-  arief: { pw:'2222', role:'Investor', name:'Arief Wahyudi' },
-  ferry: { pw:'3333', role:'Investor', name:'Ferry Lukas' },
-  staff: { pw:'0000', role:'Staff',    name:'Staff' },
-}
-const INVESTORS = [
-  { id:'ricy',  name:'Ricy Candra',   pct:43.501 },
-  { id:'arief', name:'Arief Wahyudi', pct:29.150 },
-  { id:'ferry', name:'Ferry Lukas',   pct:27.352 },
-]
-const FERRY_FEE_PCT = 10
-const KOS_NAME = 'Kos Meruya'
-const MONTHS_ID = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember']
+const SK={S:"km-settings",R:"km-rooms",T:"km-tenants",P:"km-payments",E:"km-expenses",A:"km-audit",K:"km-kas"};
 
-// ─── Utils ────────────────────────────────────────────────────────────────────
-const rp = n => 'Rp ' + Math.round(Number(n)||0).toLocaleString('id-ID')
-const today = () => new Date().toISOString().slice(0,10)
-const nowTs  = () => new Date().toISOString()
-const fmtDate = d => { if(!d) return '-'; const dt=new Date(d+'T00:00:00'); return `${dt.getDate()} ${['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'][dt.getMonth()]} ${dt.getFullYear()}` }
-const toObj  = raw => raw && typeof raw==='object' ? Object.entries(raw).map(([id,v])=>({id,...v})) : []
-const curMonth = () => { const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}` }
+const DEF_USERS=[{id:"admin",nama:"Ricy Candra",role:"admin",password:"1234"},{id:"ricy",nama:"Ricy Candra",role:"investor",password:"1111"},{id:"arief",nama:"Arief Wahyudi",role:"investor",password:"2222"},{id:"ferry",nama:"Ferry Lukas",role:"investor",password:"3333"},{id:"staff",nama:"Karyawan Operasional",role:"staff",password:"0000"}];
 
-// ─── Field normalizers — handle old Indonesian & new English field names ──────
-const normRoom = r => ({
-  ...r,
-  no:     r.no     || r.nomor     || r.nomorKamar || '',
-  floor:  r.floor  || r.lantai    || 1,
-  type:   r.type   || r.tipe      || 'Standar',
-  price:  r.price  || r.harga     || r.hargaSewa  || 1500000,
-  status: r.status || 'kosong',
-})
-const normTenant = t => ({
-  ...t,
-  name:      t.name      || t.nama        || '',
-  phone:     t.phone     || t.hp          || t.telepon || '',
-  room:      t.room      || t.kamar       || t.nomorKamar || t.noKamar || '',
-  dueDate:   t.dueDate   || t.tanggalJT   || t.jatuhTempo || t.tglJT || '',
-  startDate: t.startDate || t.tanggalMasuk|| t.tglMasuk  || '',
-  rent:      Number(t.rent || t.sewa || t.hargaSewa || 0),
-  deposit:   Number(t.deposit || t.depositAwal || t.dp || 0),
-  status:    t.status    || 'aktif',
-})
-const normPayment = p => ({
-  ...p,
-  tenantId:   p.tenantId   || p.penyewaId  || '',
-  tenantName: p.tenantName || p.namaPenyewa|| p.nama || '',
-  tenantRoom: p.tenantRoom || p.kamar      || p.nomorKamar || p.kamarId || '',
-  month:      p.month      || p.bulan      || '',
-  amount:     Number(p.amount  || p.nominal || p.jumlah || 0),
-  date:       p.date       || p.tanggal    || p.tanggalBayar || '',
-  type:       p.type       || p.tipe       || 'sewa',
-  status:     p.status     || 'lunas',
-})
-const normExpense = e => ({
-  ...e,
-  desc:     e.desc     || e.deskripsi || e.keterangan || e.nama || '',
-  amount:   Number(e.amount   || e.nominal   || e.jumlah    || 0),
-  date:     e.date     || e.tanggal   || e.tgl        || '',
-  category: e.category || e.kategori  || 'operasional',
-  source:   e.source   || e.sumber    || 'kas',
-  status:   e.status   || 'approved',
-  notes:    e.notes    || e.catatan   || '',
-})
-const normInvoice = i => ({
-  ...i,
-  invNo:      i.invNo      || i.invoiceNo  || i.nomorInvoice || '',
-  tenantId:   i.tenantId   || i.penyewaId  || '',
-  tenantName: i.tenantName || i.namaPenyewa|| '',
-  tenantRoom: i.tenantRoom || i.kamar      || '',
-  month:      i.month      || i.bulan      || '',
-  amount:     Number(i.amount     || i.nominal    || i.jumlah || 0),
-  dueDate:    i.dueDate    || i.jatuhTempo || i.tglJT || '',
-  status:     i.status     || 'belum_lunas',
-})
+const DEF = {
+  kasOperasional: 10000000,
+  feeManager: 10,
+  kepemilikan: { ricy: 43.501, arief: 29.150, ferry: 27.352 },
+  pins: { admin:"1234", ricy:"1111", arief:"2222", ferry:"3333", staff:"0000" },
+  companyInfo: { name:"Kos Meruya", address:"", phone:"", email:"" },
+  bankAccounts: [],
+};
 
-// ─── Skip junk/empty records ──────────────────────────────────────────────────
-const validRoom    = r => !!(r.no)
-const validTenant  = t => !!(t.name)
-const validPayment = p => !!(p.tenantName || p.tenantId) && Number(p.amount) > 0
-const validExpense = e => !!(e.desc) && Number(e.amount) > 0
-const validInvoice = i => !!(i.invNo)
+const uid  = () => Math.random().toString(36).substr(2,9) + Date.now().toString(36);
+const now  = () => new Date().toISOString();
+const fRp  = (n) => "Rp " + Math.round(n||0).toLocaleString("id-ID");
+const fD   = (d) => d ? new Date(d).toLocaleDateString("id-ID",{day:"2-digit",month:"short",year:"numeric"}) : "-";
+const tMon = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; };
+const mLbl = (ym) => { if(!ym) return ""; const [y,m]=ym.split("-"); return ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"][+m-1]+" "+y; };
+const months6 = () => Array.from({length:6},(_,i)=>{ const d=new Date(); d.setMonth(d.getMonth()-i); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; });
 
-// ─── Room initialization helper ───────────────────────────────────────────────
-async function initRoomsIfEmpty() {
-  const existing = await fbGet('km_rooms')
-  if (existing && Object.keys(existing).length > 0) return
-  const rooms = {}
-  // 42 rooms: L1=101-112(12), L2=201-212(12), L3=301-312(12), L4=401-406(6)
-  const floors = [
-    {floor:1, prefix:'1', count:12},
-    {floor:2, prefix:'2', count:12},
-    {floor:3, prefix:'3', count:12},
-    {floor:4, prefix:'4', count:6},
-  ]
-  floors.forEach(({floor,prefix,count})=>{
-    for(let i=1;i<=count;i++){
-      const no = `K-${prefix}${String(i).padStart(2,'0')}`
-      rooms[no.replace('-','_')] = { no, floor, status:'kosong', price:1500000, type:'Standar' }
+// ═══════════════════════════════════════════════
+// STORAGE — robust personal storage with retry
+// ═══════════════════════════════════════════════
+const store = {
+  get: async (k) => {
+    for (let i=0; i<3; i++) {
+      try {
+        const r = await store.get(k);
+        if (r && r.value !== undefined) return JSON.parse(r.value);
+        return null;
+      } catch (e) {
+        if (i===2) return null;
+        await new Promise(res=>setTimeout(res,200));
+      }
     }
-  })
-  await fbSet('km_rooms', rooms)
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// LOGIN SCREEN
-// ══════════════════════════════════════════════════════════════════════════════
-function LoginScreen({ onLogin }) {
-  const [id, setId]   = useState('')
-  const [pw, setPw]   = useState('')
-  const [err, setErr] = useState('')
-  const [busy, setBusy] = useState(false)
-
-  const doLogin = async e => {
-    e.preventDefault()
-    setErr('')
-    setBusy(true)
-    await new Promise(r=>setTimeout(r,300))
-    const u = USERS[id.toLowerCase()]
-    if (u && u.pw === pw) {
-      // Load settings from Firebase
-      onLogin({ id: id.toLowerCase(), role: u.role, name: u.name })
-    } else {
-      setErr('ID atau password salah.')
+    return null;
+  },
+  set: async (k,v) => {
+    for (let i=0; i<3; i++) {
+      try {
+        await store.set(k, JSON.stringify(v));
+        // Verify write succeeded
+        const check = await store.get(k);
+        if (check && check.value !== undefined) return true;
+      } catch(e) {
+        if (i===2) { console.error("STORAGE WRITE FAILED:", k, e); return false; }
+        await new Promise(res=>setTimeout(res,300));
+      }
     }
-    setBusy(false)
+    return false;
   }
+};
+const mkRooms = (n=42) => Array.from({length:n},(_,i)=>({
+  id:uid(), nomor:String(i+1).padStart(2,"0"),
+  lantai:i<12?1:i<24?2:i<36?3:4,
+  tipe:"Standard", harga:0, status:"kosong", penyewaId:null
+}));
 
+// ═══════════════════════════════════════════════
+// UI PRIMITIVES
+// ═══════════════════════════════════════════════
+const inp = "w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white transition";
+
+function Btn({ v="primary", onClick, children, disabled, full, size="md" }) {
+  const vs = {
+    primary:"bg-blue-600 hover:bg-blue-700 text-white shadow-sm shadow-blue-200",
+    secondary:"bg-slate-100 hover:bg-slate-200 text-slate-700",
+    danger:"bg-red-600 hover:bg-red-700 text-white shadow-sm shadow-red-200",
+    success:"bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm shadow-emerald-200",
+    ghost:"text-slate-600 hover:bg-slate-100",
+  };
+  const sz = { sm:"px-3 py-1.5 text-xs", md:"px-4 py-2.5 text-sm", lg:"px-6 py-3 text-base" };
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-900 to-indigo-800 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-8">
-        <div className="text-center mb-8">
-          <div className="text-4xl mb-2">🏠</div>
-          <h1 className="text-2xl font-bold text-gray-800">{KOS_NAME}</h1>
-          <p className="text-sm text-gray-500 mt-1">Sistem Manajemen Properti</p>
+    <button onClick={onClick} disabled={disabled}
+      className={`${vs[v]} ${sz[size]} ${full?"w-full":""}  rounded-xl font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2`}>
+      {children}
+    </button>
+  );
+}
+
+function Modal({ title, onClose, children, size="md" }) {
+  const s = { sm:"max-w-sm", md:"max-w-lg", lg:"max-w-2xl", xl:"max-w-4xl" };
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+         onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className={`bg-white rounded-2xl shadow-2xl w-full ${s[size]} max-h-[90vh] overflow-y-auto`}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 sticky top-0 bg-white z-10 rounded-t-2xl">
+          <h2 className="font-bold text-slate-800 text-lg">{title}</h2>
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-600 transition"><X size={18}/></button>
         </div>
-        <form onSubmit={doLogin} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">User ID</label>
-            <input value={id} onChange={e=>setId(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="admin / ricy / arief / ferry / staff" autoComplete="username" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-            <input type="password" value={pw} onChange={e=>setPw(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              autoComplete="current-password" />
-          </div>
-          {err && <p className="text-red-500 text-sm bg-red-50 px-3 py-2 rounded-lg">{err}</p>}
-          <button type="submit" disabled={busy}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-semibold py-2.5 rounded-lg transition">
-            {busy ? 'Masuk...' : 'Masuk'}
-          </button>
-        </form>
+        <div className="px-6 py-5">{children}</div>
       </div>
     </div>
-  )
+  );
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// SIDEBAR + LAYOUT
-// ══════════════════════════════════════════════════════════════════════════════
-const MENU = [
-  { id:'dashboard',   label:'Dashboard',      icon:'📊', roles:['Admin','Investor','Staff'] },
-  { id:'kamar',       label:'Kamar',          icon:'🚪', roles:['Admin','Staff'] },
-  { id:'penyewa',     label:'Penyewa',        icon:'👥', roles:['Admin','Staff'] },
-  { id:'pembayaran',  label:'Pembayaran',     icon:'💳', roles:['Admin','Staff'] },
-  { id:'invoice',     label:'Invoice',        icon:'🧾', roles:['Admin','Staff'] },
-  { id:'statusbayar', label:'Status Bayar',   icon:'✅', roles:['Admin','Investor','Staff'] },
-  { id:'kaskeluar',   label:'Kas & Keluar',   icon:'💸', roles:['Admin','Staff'] },
-  { id:'mutasibank',  label:'Mutasi Bank',    icon:'🏦', roles:['Admin','Investor'] },
-  { id:'laporan',     label:'Laporan',        icon:'📈', roles:['Admin','Investor'] },
-  { id:'pengaturan',  label:'Pengaturan',     icon:'⚙️', roles:['Admin'] },
-  { id:'logaktivitas',label:'Log Aktivitas',  icon:'📋', roles:['Admin'] },
-]
+const Card = ({children,className=""}) => <div className={`bg-white rounded-2xl border border-slate-100 shadow-sm ${className}`}>{children}</div>;
 
-function Layout({ user, onLogout, children, page, setPage }) {
-  const [sidebarOpen, setSidebarOpen] = useState(false)
-  const allowedMenu = MENU.filter(m => m.roles.includes(user.role))
-  const currentMenu = allowedMenu.find(m => m.id === page) || allowedMenu[0]
+function Badge({ status }) {
+  const map = {
+    lunas:    { cls:"bg-emerald-100 text-emerald-700", label:"Lunas" },
+    telat:    { cls:"bg-red-100 text-red-700",         label:"Telat" },
+    belum:    { cls:"bg-amber-100 text-amber-700",     label:"Belum Bayar" },
+    kosong:   { cls:"bg-slate-100 text-slate-500",     label:"Kosong" },
+    maintenance: { cls:"bg-orange-100 text-orange-700", label:"Maintenance" },
+    pending:  { cls:"bg-amber-100 text-amber-700",     label:"Menunggu Approval" },
+    approved: { cls:"bg-emerald-100 text-emerald-700", label:"Disetujui" },
+    rejected: { cls:"bg-red-100 text-red-700",         label:"Ditolak" },
+    aktif:    { cls:"bg-emerald-100 text-emerald-700", label:"Aktif" },
+    keluar:   { cls:"bg-slate-100 text-slate-500",     label:"Keluar" },
+  };
+  const b = map[status] || { cls:"bg-slate-100 text-slate-500", label:status };
+  return <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${b.cls}`}>{b.label}</span>;
+}
+
+// ═══════════════════════════════════════════════
+// LOGIN
+// ═══════════════════════════════════════════════
+function LoginScreen({ settings, users, onLogin }) {
+  const [uid,setUid]=useState(""); const [pwd,setPwd]=useState("");
+  const [show,setShow]=useState(false); const [err,setErr]=useState("");
+  const nm=settings?.companyInfo?.name||"Kos Meruya";
+  const go=()=>{
+    if(!uid||!pwd)return setErr("ID dan password wajib diisi");
+    const u=(users||DEF_USERS).find(x=>x.id.toLowerCase()===uid.toLowerCase()&&x.password===pwd);
+    if(!u)return setErr("ID atau password salah");
+    onLogin(u);
+  };
+  return (
+    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#0f172a,#1e3a5f)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div style={{background:"rgba(255,255,255,0.1)",backdropFilter:"blur(20px)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:24,width:"100%",maxWidth:380,padding:32}}>
+        <div style={{textAlign:"center",marginBottom:32}}>
+          <div style={{width:72,height:72,background:"linear-gradient(135deg,#3b82f6,#6366f1)",borderRadius:16,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}><Building size={32} color="white"/></div>
+          <h1 style={{color:"white",fontSize:28,fontWeight:900,margin:0}}>{nm}</h1>
+          <p style={{color:"rgba(147,197,253,0.7)",fontSize:14,marginTop:4}}>Sistem Manajemen Properti</p>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:16}}>
+          <div>
+            <label style={{color:"rgba(255,255,255,0.6)",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:2,display:"block",marginBottom:8}}>ID Pengguna</label>
+            <input value={uid} onChange={e=>setUid(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()} placeholder="Masukkan ID"
+              style={{width:"100%",background:"rgba(255,255,255,0.1)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:12,padding:"12px 16px",color:"white",fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+          </div>
+          <div style={{position:"relative"}}>
+            <label style={{color:"rgba(255,255,255,0.6)",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:2,display:"block",marginBottom:8}}>Password</label>
+            <input type={show?"text":"password"} value={pwd} onChange={e=>setPwd(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()} placeholder="Masukkan password"
+              style={{width:"100%",background:"rgba(255,255,255,0.1)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:12,padding:"12px 48px 12px 16px",color:"white",fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+            <button onClick={()=>setShow(!show)} style={{position:"absolute",right:12,bottom:10,background:"none",border:"none",cursor:"pointer",color:"rgba(255,255,255,0.4)",padding:4}}>
+              {show?<EyeOff size={16}/>:<Eye size={16}/>}
+            </button>
+          </div>
+          {err&&<p style={{color:"#f87171",fontSize:13,textAlign:"center",margin:0}}>{err}</p>}
+          <button onClick={go} style={{background:"linear-gradient(135deg,#3b82f6,#6366f1)",color:"white",border:"none",borderRadius:12,padding:"14px",fontSize:14,fontWeight:700,cursor:"pointer",width:"100%"}}>
+            Masuk →
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Layout({ children, page, setPage, role, user, onLogout, expenses, open, setOpen }) {
+  const NAV = [
+    { id:"dashboard", icon:Home,      label:"Dashboard",       roles:["admin","investor","staff"] },
+    { id:"rooms",     icon:Grid,      label:"Kamar",           roles:["admin","investor","staff"] },
+    { id:"tenants",   icon:Users,     label:"Penyewa",         roles:["admin","investor","staff"] },
+    { id:"payments",  icon:CreditCard,label:"Pembayaran",      roles:["admin","investor","staff"] },
+    { id:"expenses",  icon:Wallet,    label:"Kas & Keluar",    roles:["admin","investor","staff"] },
+    { id:"invoices",  icon:FileText,  label:"Invoice",         roles:["admin","investor","staff"] },
+    { id:"reports",   icon:BarChart2, label:"Laporan",         roles:["admin","investor"] },
+    { id:"settings",  icon:Settings,  label:"Pengaturan",      roles:["admin"] },
+    { id:"audit",     icon:List,      label:"Log Aktivitas",   roles:["admin","investor"] },
+  ].filter(n => n.roles.includes(role));
+
+  const pending = expenses.filter(e=>e.status==="pending").length;
+  const uLabel = { admin:"Admin 👑", ricy:"Investor Ricy", arief:"Investor Arief", ferry:"Investor Ferry", staff:"Staff Operasional" }[user]||user;
 
   return (
-    <div className="h-screen bg-gray-100 flex overflow-hidden">
-      {/* Mobile overlay */}
-      {sidebarOpen && <div className="fixed inset-0 bg-black/40 z-20 lg:hidden" onClick={()=>setSidebarOpen(false)} />}
-
+    <div className="flex h-screen bg-slate-50 overflow-hidden font-sans">
       {/* Sidebar */}
-      <aside className={`fixed top-0 left-0 h-full w-64 bg-gray-900 text-white z-30 transform transition-transform flex flex-col ${sidebarOpen?'translate-x-0':'-translate-x-full'} lg:translate-x-0 lg:static lg:flex flex-shrink-0`}>
-        <div className="p-4 border-b border-gray-700 flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">🏠</span>
+      <aside className={`${open?"w-60":"w-16"} bg-slate-900 flex flex-col flex-shrink-0 transition-all duration-300 ease-in-out`}>
+        <div className="flex items-center justify-between px-4 py-5 border-b border-slate-700/50">
+          {open && (
             <div>
-              <p className="font-bold text-sm">{KOS_NAME}</p>
-              <p className="text-xs text-gray-400">{user.name} · {user.role}</p>
+              <p className="text-white font-black text-sm tracking-tight">Kos Meruya</p>
+              <p className="text-slate-400 text-xs">Manajemen Properti</p>
             </div>
-          </div>
+          )}
+          <button onClick={()=>setOpen(!open)} className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-700 transition ml-auto">
+            {open ? <ChevronLeft size={18}/> : <Menu size={18}/>}
+          </button>
         </div>
-        <nav className="flex-1 p-2 overflow-y-auto min-h-0">
-          {allowedMenu.map(m=>(
-            <button key={m.id} onClick={()=>{setPage(m.id);setSidebarOpen(false)}}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition mb-0.5 ${page===m.id?'bg-blue-600 text-white':'text-gray-300 hover:bg-gray-700'}`}>
-              <span>{m.icon}</span><span>{m.label}</span>
-            </button>
-          ))}
+
+        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+          {NAV.map(n => {
+            const Icon = n.icon;
+            const active = page === n.id;
+            return (
+              <button key={n.id} onClick={()=>setPage(n.id)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${active ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
+                <div className="relative flex-shrink-0">
+                  <Icon size={18}/>
+                  {n.id==="expenses" && pending>0 &&
+                    <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 rounded-full text-white text-[9px] font-bold flex items-center justify-center">{pending}</span>}
+                </div>
+                {open && <span>{n.label}</span>}
+              </button>
+            );
+          })}
         </nav>
-        <div className="flex-shrink-0 p-3 border-t border-gray-700">
-          <button onClick={onLogout} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition">
-            <span>🚪</span><span>Keluar</span>
+
+        <div className="p-3 border-t border-slate-700/50">
+          {open && <p className="text-slate-500 text-xs px-3 pb-2 truncate">{uLabel}</p>}
+          <button onClick={onLogout}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-400 hover:text-red-400 hover:bg-slate-800 transition text-sm font-medium">
+            <LogOut size={18}/>
+            {open && "Keluar"}
           </button>
         </div>
       </aside>
 
       {/* Main */}
-      <div className="flex-1 flex flex-col h-screen min-w-0 overflow-hidden">
-        <header className="bg-white shadow-sm px-4 py-3 flex items-center gap-3 flex-shrink-0">
-          <button onClick={()=>setSidebarOpen(true)} className="lg:hidden p-1.5 rounded hover:bg-gray-100">
-            <span className="text-xl">☰</span>
-          </button>
-          <h1 className="font-semibold text-gray-800">{currentMenu?.icon} {currentMenu?.label}</h1>
-        </header>
-        <main className="flex-1 overflow-y-auto p-4">
+      <main className="flex-1 overflow-y-auto">
+        <div className="p-6 max-w-7xl mx-auto min-h-full">
           {children}
-        </main>
-      </div>
-    </div>
-  )
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// SHARED COMPONENTS
-// ══════════════════════════════════════════════════════════════════════════════
-function Card({ title, value, sub, color='blue', icon }) {
-  const colors = { blue:'bg-blue-50 border-blue-200', green:'bg-green-50 border-green-200', yellow:'bg-yellow-50 border-yellow-200', red:'bg-red-50 border-red-200', purple:'bg-purple-50 border-purple-200' }
-  const tcolors = { blue:'text-blue-700', green:'text-green-700', yellow:'text-yellow-700', red:'text-red-700', purple:'text-purple-700' }
-  return (
-    <div className={`rounded-xl border p-4 ${colors[color]}`}>
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-sm text-gray-600">{title}</p>
-          <p className={`text-xl font-bold mt-1 ${tcolors[color]}`}>{value}</p>
-          {sub && <p className="text-xs text-gray-500 mt-0.5">{sub}</p>}
         </div>
-        {icon && <span className="text-2xl">{icon}</span>}
-      </div>
+      </main>
     </div>
-  )
+  );
 }
 
-function Modal({ open, title, onClose, children, wide }) {
-  if (!open) return null
-  return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={e=>{ if(e.target===e.currentTarget) onClose() }}>
-      <div className={`bg-white rounded-xl shadow-xl w-full ${wide?'max-w-2xl':'max-w-md'} max-h-[90vh] overflow-y-auto`}>
-        <div className="flex items-center justify-between p-4 border-b">
-          <h3 className="font-semibold text-gray-800">{title}</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
-        </div>
-        <div className="p-4">{children}</div>
-      </div>
-    </div>
-  )
-}
-
-function Btn({ children, onClick, variant='primary', size='md', disabled, className='' }) {
-  const variants = {
-    primary: 'bg-blue-600 hover:bg-blue-700 text-white',
-    success: 'bg-green-600 hover:bg-green-700 text-white',
-    danger:  'bg-red-600 hover:bg-red-700 text-white',
-    warning: 'bg-yellow-500 hover:bg-yellow-600 text-white',
-    ghost:   'bg-gray-100 hover:bg-gray-200 text-gray-700',
-  }
-  const sizes = { sm:'px-3 py-1 text-sm', md:'px-4 py-2 text-sm', lg:'px-6 py-2.5' }
-  return (
-    <button onClick={onClick} disabled={disabled}
-      className={`${variants[variant]} ${sizes[size]} rounded-lg font-medium transition disabled:opacity-50 ${className}`}>
-      {children}
-    </button>
-  )
-}
-
-function Input({ label, ...props }) {
-  return (
-    <div>
-      {label && <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>}
-      <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" {...props} />
-    </div>
-  )
-}
-
-function Select({ label, children, ...props }) {
-  return (
-    <div>
-      {label && <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>}
-      <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" {...props}>
-        {children}
-      </select>
-    </div>
-  )
-}
-
-function Badge({ color='gray', children }) {
-  const c = { gray:'bg-gray-100 text-gray-700', green:'bg-green-100 text-green-700', red:'bg-red-100 text-red-700', yellow:'bg-yellow-100 text-yellow-700', blue:'bg-blue-100 text-blue-700', purple:'bg-purple-100 text-purple-700' }
-  return <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${c[color]}`}>{children}</span>
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════
 // DASHBOARD
-// ══════════════════════════════════════════════════════════════════════════════
-function Dashboard({ user, logAction }) {
-  const [data, setData] = useState({ rooms:{}, tenants:{}, payments:{}, expenses:{} })
-  const [loading, setLoading] = useState(true)
+// ═══════════════════════════════════════════════
+function Dashboard({ role, user, rooms, tenants, payments, expenses, settings, setPage }) {
+  const cm = tMon();
+  const terisi   = rooms.filter(r=>r.status==="terisi").length;
+  const kosong   = rooms.filter(r=>r.status==="kosong").length;
+  const income   = payments.filter(p=>p.periode===cm).reduce((s,p)=>s+p.nominal,0);
+  const spend    = expenses.filter(e=>e.periode===cm&&e.status==="approved").reduce((s,e)=>s+e.nominal,0);
+  const pending  = expenses.filter(e=>e.status==="pending");
+  const occ      = rooms.length>0 ? Math.round(terisi/rooms.length*100) : 0;
 
-  useEffect(()=>{
-    async function load() {
-      const [rooms, tenants, payments, expenses] = await Promise.all([
-        fbGet('km_rooms'), fbGet('km_tenants'), fbGet('km_payments'), fbGet('km_expenses')
-      ])
-      setData({
-        rooms:    rooms    || {},
-        tenants:  tenants  || {},
-        payments: payments || {},
-        expenses: expenses || {},
-      })
-      setLoading(false)
+  const bersih   = Math.max(0, income - (settings.kasOperasional||10000000));
+  const feeFerry = bersih * ((settings.feeManager||10)/100);
+  const dibagi   = bersih - feeFerry;
+  const k        = settings.kepemilikan || DEF.kepemilikan;
+  const bagian   = { ricy: dibagi*(k.ricy/100), arief: dibagi*(k.arief/100), ferry: dibagi*(k.ferry/100)+feeFerry };
+
+  const today = new Date();
+  const telat = tenants.filter(t => {
+    if (!t.aktif||!t.jatuhTempo||!t.kamarId) return false;
+    const paid = payments.some(p=>p.penyewaId===t.id&&p.periode===cm);
+    if (paid) return false;
+    const due = new Date(today.getFullYear(), today.getMonth(), t.jatuhTempo);
+    return today > due;
+  });
+
+  const isInv = role==="admin"||role==="investor";
+
+  const STATS = [
+    { label:"Occupancy",    value:`${occ}%`,       sub:`${terisi} terisi · ${kosong} kosong`, color:"blue" },
+    { label:"Pendapatan",   value:fRp(income),      sub:mLbl(cm),                              color:"emerald" },
+    { label:"Pengeluaran",  value:fRp(spend),       sub:"kas operasional",                      color:"red" },
+    { label:"Tunggakan",    value:telat.length,     sub:"kamar terlambat bayar",                color:"amber" },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-black text-slate-900">Dashboard</h1>
+        <p className="text-slate-400 text-sm mt-0.5">{mLbl(cm)} · {today.toLocaleDateString("id-ID",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</p>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {STATS.map(s => (
+          <Card key={s.label} className="p-5">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{s.label}</p>
+            <p className={`text-2xl font-black mt-2 text-${s.color}-600`}>{s.value}</p>
+            <p className="text-xs text-slate-400 mt-1">{s.sub}</p>
+          </Card>
+        ))}
+      </div>
+
+      {isInv && (
+        <Card className="p-6">
+          <h2 className="font-black text-slate-900 mb-1">Estimasi Bagi Hasil</h2>
+          <p className="text-slate-400 text-sm mb-5">{mLbl(cm)}</p>
+          <div className="grid grid-cols-3 gap-4 mb-5">
+            {[{n:"Ricy Candra",k:"ricy",p:k.ricy},{n:"Arief Wahyudi",k:"arief",p:k.arief},{n:"Ferry Lukas",k:"ferry",p:k.ferry,fee:true}].map(inv=>(
+              <div key={inv.k} className={`rounded-2xl p-4 ${user===inv.k||user==="admin"?"bg-blue-50 border-2 border-blue-200":"bg-slate-50"}`}>
+                <p className="font-bold text-slate-800 text-sm">{inv.n}</p>
+                <p className="text-xs text-slate-400">{inv.p}%{inv.fee?" + fee":""}</p>
+                <p className="text-xl font-black text-blue-700 mt-2">{fRp(bagian[inv.k])}</p>
+              </div>
+            ))}
+          </div>
+          <div className="bg-slate-50 rounded-xl p-4 text-sm space-y-2">
+            {[
+              ["Total Pendapatan",                  fRp(income),                      "text-emerald-600"],
+              [`Kas Operasional`,                    "– "+fRp(settings.kasOperasional),"text-red-500"],
+              [`Fee Pengelola (${settings.feeManager}%)`, "– "+fRp(feeFerry),         "text-red-500"],
+            ].map(([l,v,c])=>(
+              <div key={l} className="flex justify-between items-center">
+                <span className="text-slate-500">{l}</span>
+                <span className={`font-bold ${c}`}>{v}</span>
+              </div>
+            ))}
+            <div className="flex justify-between items-center pt-2 border-t border-slate-200">
+              <span className="font-bold text-slate-800">Yang Dibagikan</span>
+              <span className="font-black text-slate-900 text-base">{fRp(dibagi)}</span>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {isInv && pending.length>0 && (
+        <Card className="p-6 border-l-4 border-amber-400">
+          <div className="flex items-center gap-2 mb-4">
+            <Bell size={20} className="text-amber-500"/>
+            <h2 className="font-black text-slate-900">{pending.length} Pengeluaran Butuh Persetujuan</h2>
+          </div>
+          {pending.slice(0,3).map(e=>(
+            <div key={e.id} className="flex justify-between items-center py-3 border-b border-slate-100 last:border-0">
+              <div>
+                <p className="text-sm font-bold text-slate-800">{e.deskripsi}</p>
+                <p className="text-xs text-slate-400">{e.kategori} · {fD(e.tanggal)} · {e.approvals?.length||0}/2 approval</p>
+              </div>
+              <p className="font-black text-red-600">{fRp(e.nominal)}</p>
+            </div>
+          ))}
+          <button onClick={()=>setPage("expenses")} className="mt-3 text-sm font-bold text-blue-600 hover:underline">Lihat & setujui →</button>
+        </Card>
+      )}
+
+      {telat.length>0 && (
+        <Card className="p-6 border-l-4 border-red-400">
+          <div className="flex items-center gap-2 mb-4">
+            <AlertTriangle size={20} className="text-red-500"/>
+            <h2 className="font-black text-slate-900">{telat.length} Penyewa Terlambat Bayar</h2>
+          </div>
+          {telat.slice(0,5).map(t=>{
+            const room=rooms.find(r=>r.id===t.kamarId);
+            return (
+              <div key={t.id} className="flex justify-between items-center py-3 border-b border-slate-100 last:border-0">
+                <div>
+                  <p className="text-sm font-bold text-slate-800">{t.nama}</p>
+                  <p className="text-xs text-slate-400">Kamar {room?.nomor} · Jatuh tempo tgl {t.jatuhTempo}</p>
+                </div>
+                <Badge status="telat"/>
+              </div>
+            );
+          })}
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════
+// ROOMS PAGE
+// ═══════════════════════════════════════════════
+function RoomsPage({ role, rooms, tenants, payments, saveRooms, addAudit }) {
+  const [modal,   setModal]  = useState(null);
+  const [form,    setForm]   = useState({});
+  const [filter,  setFilter] = useState("semua");
+  const [lantai,  setLantai] = useState("semua");
+  const cm = tMon();
+  const lantais = [...new Set(rooms.map(r=>r.lantai))].sort();
+
+  const getRoomStatus = (room) => {
+    if (room.status==="kosong") return "kosong";
+    if (room.status==="maintenance") return "maintenance";
+    const t = tenants.find(t=>t.id===room.penyewaId);
+    if (!t) return "kosong";
+    if (payments.some(p=>p.penyewaId===t.id&&p.periode===cm)) return "lunas";
+    const today=new Date(); const due=new Date(today.getFullYear(),today.getMonth(),t.jatuhTempo||1);
+    return today>due ? "telat" : "belum";
+  };
+
+  const COLORS = {
+    lunas:"border-emerald-400 bg-emerald-50", telat:"border-red-400 bg-red-50",
+    belum:"border-amber-300 bg-amber-50", kosong:"border-slate-200 bg-slate-50",
+    maintenance:"border-orange-300 bg-orange-50"
+  };
+
+  const filtered = rooms.filter(r =>
+    (filter==="semua" || r.status===filter) &&
+    (lantai==="semua" || r.lantai===+lantai)
+  );
+  const isAdmin = role==="admin";
+
+  const openAdd = () => { setForm({nomor:"",lantai:1,tipe:"Standard",harga:0,status:"kosong"}); setModal("add"); };
+  const openEdit = (r) => { setForm({...r}); setModal(r); };
+
+  const save = async () => {
+    if (!form.nomor) return alert("Nomor kamar wajib diisi");
+    if (modal==="add") {
+      const nr = [...rooms,{...form,id:uid(),penyewaId:null,harga:+form.harga}];
+      await saveRooms(nr);
+      await addAudit("KAMAR_TAMBAH",`Kamar ${form.nomor} ditambahkan`);
+    } else {
+      await saveRooms(rooms.map(r=>r.id===modal.id?{...r,...form,harga:+form.harga}:r));
+      await addAudit("KAMAR_EDIT",`Kamar ${form.nomor} diedit`);
     }
-    load()
-  },[])
+    setModal(null);
+  };
 
-  if (loading) return <div className="flex items-center justify-center h-40 text-gray-500">Memuat data...</div>
-
-  const roomList    = toObj(data.rooms).map(normRoom)
-  const tenantList  = toObj(data.tenants).map(normTenant).filter(validTenant)
-  const payList     = toObj(data.payments).map(normPayment).filter(validPayment)
-  const expList     = toObj(data.expenses).map(normExpense).filter(validExpense)
-
-  const totalRooms  = roomList.length || 42
-  const occupied    = roomList.filter(r=>r.status==='isi').length
-  const vacant      = roomList.filter(r=>r.status==='kosong').length
-  const occupancy   = totalRooms > 0 ? Math.round((occupied/totalRooms)*100) : 0
-
-  // Revenue this month
-  const cm = curMonth()
-  const monthPay = payList.filter(p=>p.month===cm && p.type==='sewa')
-  const monthRev = monthPay.reduce((s,p)=>s+(Number(p.amount)||0),0)
-
-  // Expenses this month
-  const monthExp = expList.filter(e=>e.date?.startsWith(cm) && e.status!=='ditolak')
-  const monthExpTotal = monthExp.reduce((s,e)=>s+(Number(e.amount)||0),0)
-
-  const netProfit = monthRev - monthExpTotal
-
-  // Overdue tenants (JT sudah lewat, belum bayar bulan ini)
-  const todayDate = new Date()
-  const overdueList = tenantList.filter(t=>{
-    if (!t.dueDate || t.status==='keluar') return false
-    const paid = payList.some(p=>p.tenantId===t.id && p.month===cm && p.type==='sewa' && p.status!=='dibatalkan')
-    if (paid) return false
-    const dueDay = Number(t.dueDate)
-    const dueDate = new Date(todayDate.getFullYear(), todayDate.getMonth(), dueDay)
-    return todayDate > dueDate
-  })
-
-  // Approaching due in 7 days
-  const approaching = tenantList.filter(t=>{
-    if (!t.dueDate || t.status==='keluar') return false
-    const paid = payList.some(p=>p.tenantId===t.id && p.month===cm && p.type==='sewa' && p.status!=='dibatalkan')
-    if (paid) return false
-    const dueDay = Number(t.dueDate)
-    const dueDate = new Date(todayDate.getFullYear(), todayDate.getMonth(), dueDay)
-    const diff = (dueDate - todayDate) / 86400000
-    return diff >= 0 && diff <= 7
-  })
-
-  // Pending expense approvals
-  const pendingApproval = expList.filter(e=>e.status==='pending_approval')
+  const del = async (r) => {
+    if (r.status==="terisi") return alert("Kamar masih terisi, tidak bisa dihapus");
+    if (!confirm(`Hapus kamar ${r.nomor}?`)) return;
+    await saveRooms(rooms.filter(x=>x.id!==r.id));
+    await addAudit("KAMAR_HAPUS",`Kamar ${r.nomor} dihapus`);
+    setModal(null);
+  };
 
   return (
     <div className="space-y-5">
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Card title="Tingkat Hunian" value={`${occupancy}%`} sub={`${occupied}/${totalRooms} kamar`} color="blue" icon="🏠" />
-        <Card title="Pendapatan Bulan Ini" value={rp(monthRev)} sub={`${monthPay.length} pembayaran`} color="green" icon="💰" />
-        <Card title="Pengeluaran" value={rp(monthExpTotal)} sub="bulan ini" color="yellow" icon="💸" />
-        <Card title="Net Profit" value={rp(netProfit)} sub="bulan ini" color={netProfit>=0?'purple':'red'} icon="📈" />
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-black text-slate-900">Kamar</h1>
+          <p className="text-slate-400 text-sm">{rooms.length} kamar total</p>
+        </div>
+        {isAdmin && <Btn onClick={openAdd}><Plus size={16}/>Tambah Kamar</Btn>}
       </div>
 
-      {/* Room status bar */}
-      <div className="bg-white rounded-xl p-4 border border-gray-200">
-        <h3 className="font-semibold text-gray-700 mb-3">Status Kamar</h3>
-        <div className="flex gap-4 text-sm mb-3">
-          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-green-500 inline-block"></span>Terisi: {occupied}</span>
-          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-gray-300 inline-block"></span>Kosong: {vacant}</span>
-          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-yellow-400 inline-block"></span>Maintenance: {roomList.filter(r=>r.status==='maintenance').length}</span>
-        </div>
-        <div className="w-full bg-gray-100 rounded-full h-4 overflow-hidden">
-          <div className="h-4 bg-green-500 rounded-full transition-all" style={{width:`${occupancy}%`}}></div>
-        </div>
-      </div>
-
-      {/* Alerts */}
-      {overdueList.length > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-          <h3 className="font-semibold text-red-700 mb-2">🔴 Tunggakan ({overdueList.length} penyewa)</h3>
-          <div className="space-y-1">
-            {overdueList.slice(0,5).map(t=>(
-              <div key={t.id} className="text-sm text-red-700 flex items-center justify-between bg-red-100 rounded-lg px-3 py-1.5">
-                <span>{t.name} — {t.room}</span>
-                <span>JT tgl {t.dueDate}</span>
-              </div>
-            ))}
-            {overdueList.length > 5 && <p className="text-sm text-red-600">+{overdueList.length-5} lainnya</p>}
-          </div>
-        </div>
-      )}
-
-      {approaching.length > 0 && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
-          <h3 className="font-semibold text-yellow-700 mb-2">⚠️ Jatuh Tempo 7 Hari ({approaching.length} penyewa)</h3>
-          <div className="space-y-1">
-            {approaching.map(t=>(
-              <div key={t.id} className="text-sm text-yellow-800 flex items-center justify-between bg-yellow-100 rounded-lg px-3 py-1.5">
-                <span>{t.name} — {t.room}</span>
-                <span>JT tgl {t.dueDate}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {pendingApproval.length > 0 && user.role==='Admin' && (
-        <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
-          <h3 className="font-semibold text-orange-700 mb-2">⏳ Perlu Persetujuan Pengeluaran ({pendingApproval.length})</h3>
-          {pendingApproval.map(e=>(
-            <div key={e.id} className="text-sm text-orange-800 bg-orange-100 rounded-lg px-3 py-1.5 mb-1 flex justify-between">
-              <span>{e.desc}</span><span className="font-semibold">{rp(e.amount)}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Bagi Hasil Preview — Investor only */}
-      {user.role === 'Investor' && netProfit > 0 && (
-        <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
-          <h3 className="font-semibold text-purple-700 mb-3">💎 Estimasi Bagi Hasil Bulan Ini</h3>
-          {(() => {
-            const ferryFee = Math.round(netProfit * FERRY_FEE_PCT / 100)
-            const distributable = netProfit - ferryFee
-            return INVESTORS.map(inv => {
-              const share = Math.round(distributable * inv.pct / 100)
-              const isMe = inv.id === user.id
-              return (
-                <div key={inv.id} className={`flex justify-between text-sm py-1.5 px-2 rounded ${isMe?'bg-purple-200 font-semibold':''}`}>
-                  <span>{inv.name}{isMe?' (Kamu)':''}</span>
-                  <span>{rp(share)}</span>
-                </div>
-              )
-            })
-          })()}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// KAMAR
-// ══════════════════════════════════════════════════════════════════════════════
-function Kamar({ user, logAction }) {
-  const [rooms, setRooms]       = useState({})
-  const [loading, setLoading]   = useState(true)
-  const [filter, setFilter]     = useState({ floor:'', status:'' })
-  const [modal, setModal]       = useState(null) // {room} or null
-  const [form, setForm]         = useState({})
-
-  const load = async () => {
-    setLoading(true)
-    const data = await fbGet('km_rooms')
-    if (!data || Object.keys(data).length === 0) {
-      await initRoomsIfEmpty()
-      const d2 = await fbGet('km_rooms')
-      setRooms(d2 || {})
-    } else {
-      // Normalize field names (handle old Indonesian format)
-      const normalized = {}
-      Object.entries(data).forEach(([k,v]) => {
-        const r = normRoom(v)
-        if (validRoom(r)) normalized[k] = r  // skip junk records without room number
-      })
-      setRooms(normalized)
-    }
-    setLoading(false)
-  }
-
-  useEffect(()=>{ load() },[])
-
-  const roomList = toObj(rooms)
-  const floors = [...new Set(roomList.map(r=>r.floor))].sort()
-  const filtered = roomList.filter(r=>
-    (!filter.floor  || String(r.floor)===filter.floor) &&
-    (!filter.status || r.status===filter.status)
-  )
-
-  const openEdit = r => { setForm({...r}); setModal({room:r}) }
-
-  const saveRoom = async () => {
-    const key = form.no?.replace('-','_').replace('-','_')
-    if (!key) return
-    await fbPatch(`km_rooms/${key}`, { type:form.type, price:Number(form.price), status:form.status })
-    await logAction('Edit Kamar', `${form.no} → status: ${form.status}, harga: ${rp(form.price)}`)
-    setModal(null)
-    load()
-  }
-
-  const statusColor = s => ({ isi:'green', kosong:'gray', maintenance:'yellow' })[s] || 'gray'
-
-  if (loading) return <div className="flex items-center justify-center h-40 text-gray-500">Memuat...</div>
-
-  return (
-    <div className="space-y-4">
-      {/* Filter */}
-      <div className="bg-white rounded-xl p-3 border flex flex-wrap gap-3">
-        <Select label="" value={filter.floor} onChange={e=>setFilter(f=>({...f,floor:e.target.value}))}>
-          <option value="">Semua Lantai</option>
-          {floors.map(f=><option key={f} value={f}>Lantai {f}</option>)}
-        </Select>
-        <Select label="" value={filter.status} onChange={e=>setFilter(f=>({...f,status:e.target.value}))}>
-          <option value="">Semua Status</option>
-          <option value="isi">Terisi</option>
-          <option value="kosong">Kosong</option>
-          <option value="maintenance">Maintenance</option>
-        </Select>
-        <div className="flex items-end gap-2 text-sm text-gray-600">
-          <span>Menampilkan {filtered.length} dari {roomList.length} kamar</span>
-        </div>
-      </div>
-
-      {/* Grid */}
-      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
-        {filtered.map(r=>(
-          <button key={r.id} onClick={()=>user.role!=='Investor' && openEdit(r)}
-            className={`rounded-xl p-3 border-2 text-center transition hover:shadow-md ${
-              r.status==='isi'?'bg-green-50 border-green-300':
-              r.status==='maintenance'?'bg-yellow-50 border-yellow-300':
-              'bg-white border-gray-200 hover:border-blue-300'
-            }`}>
-            <p className="text-xs font-bold text-gray-700">{r.no}</p>
-            <p className="text-xs text-gray-500 mt-0.5">L{r.floor}</p>
-            <Badge color={statusColor(r.status)}>{r.status}</Badge>
-            {r.status==='isi' && <p className="text-xs text-green-700 mt-1">{rp(r.price)}</p>}
+      {/* Status filter */}
+      <div className="flex flex-wrap gap-2">
+        {["semua","kosong","terisi","maintenance"].map(f=>(
+          <button key={f} onClick={()=>setFilter(f)}
+            className={`px-4 py-1.5 rounded-xl text-sm font-semibold capitalize transition-all ${filter===f?"bg-blue-600 text-white shadow-sm":"bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+            {f}
           </button>
         ))}
       </div>
 
-      {/* Summary */}
-      <div className="grid grid-cols-3 gap-3">
-        <Card title="Terisi" value={roomList.filter(r=>r.status==='isi').length} color="green" />
-        <Card title="Kosong" value={roomList.filter(r=>r.status==='kosong').length} color="blue" />
-        <Card title="Maintenance" value={roomList.filter(r=>r.status==='maintenance').length} color="yellow" />
-      </div>
-
-      {/* Edit Modal */}
-      <Modal open={!!modal} title={`Edit Kamar ${modal?.room?.no}`} onClose={()=>setModal(null)}>
-        <div className="space-y-3">
-          <Select label="Status" value={form.status||''} onChange={e=>setForm(f=>({...f,status:e.target.value}))}>
-            <option value="kosong">Kosong</option>
-            <option value="isi">Terisi</option>
-            <option value="maintenance">Maintenance</option>
-          </Select>
-          <Input label="Harga Sewa (Rp)" type="number" value={form.price||''} onChange={e=>setForm(f=>({...f,price:e.target.value}))} />
-          <Input label="Tipe Kamar" value={form.type||''} onChange={e=>setForm(f=>({...f,type:e.target.value}))} />
-          <div className="flex gap-2 pt-2">
-            <Btn onClick={saveRoom} variant="primary">Simpan</Btn>
-            <Btn onClick={()=>setModal(null)} variant="ghost">Batal</Btn>
-          </div>
-        </div>
-      </Modal>
-    </div>
-  )
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// PENYEWA
-// ══════════════════════════════════════════════════════════════════════════════
-function Penyewa({ user, logAction }) {
-  const [tenants, setTenants] = useState([])
-  const [rooms, setRooms]     = useState([])
-  const [loading, setLoading] = useState(true)
-  const [search, setSearch]   = useState('')
-  const [modal, setModal]     = useState(null) // 'add'|'edit'|'checkout' + data
-  const [form, setForm]       = useState({})
-  const [busy, setBusy]       = useState(false)
-
-  const load = async () => {
-    setLoading(true)
-    const [t, r] = await Promise.all([fbGet('km_tenants'), fbGet('km_rooms')])
-    setTenants(toObj(t).map(normTenant).filter(validTenant))
-    setRooms(toObj(r).map(normRoom).filter(validRoom).filter(r=>r.status==='kosong'))
-    setLoading(false)
-  }
-  useEffect(()=>{ load() },[])
-
-  const filtered = tenants.filter(t=>
-    !t.status || t.status!=='keluar' // hide checked-out
-  ).filter(t =>
-    t.name?.toLowerCase().includes(search.toLowerCase()) ||
-    t.room?.toLowerCase().includes(search.toLowerCase()) ||
-    t.phone?.includes(search)
-  )
-
-  const defaultForm = () => ({
-    name:'', room:'', phone:'', startDate:today(), dueDate:'21', deposit:'0', rent:'1500000', status:'aktif', notes:''
-  })
-
-  const openAdd    = () => { setForm(defaultForm()); setModal({type:'add'}) }
-  const openEdit   = t  => { setForm({...t}); setModal({type:'edit', tenant:t}) }
-  const openCheckout = t => { setForm({...t}); setModal({type:'checkout', tenant:t}) }
-
-  const saveTenant = async () => {
-    setBusy(true)
-    if (modal.type === 'add') {
-      const id = await fbPush('km_tenants', {...form, createdAt:nowTs()})
-      // Update room status
-      const roomKey = form.room?.replace('-','_').replace('-','_')
-      if (roomKey) await fbPatch(`km_rooms/${roomKey}`, { status:'isi', tenantId:id })
-      await logAction('Tambah Penyewa', `${form.name} di ${form.room}`)
-    } else {
-      await fbPatch(`km_tenants/${modal.tenant.id}`, form)
-      await logAction('Edit Penyewa', `${form.name}`)
-    }
-    setBusy(false)
-    setModal(null)
-    load()
-  }
-
-  const doCheckout = async () => {
-    setBusy(true)
-    await fbPatch(`km_tenants/${form.id}`, { status:'keluar', checkoutDate:today() })
-    const roomKey = form.room?.replace('-','_').replace('-','_')
-    if (roomKey) await fbPatch(`km_rooms/${roomKey}`, { status:'kosong', tenantId:'' })
-    await logAction('Checkout Penyewa', `${form.name} dari ${form.room}`)
-    setBusy(false)
-    setModal(null)
-    load()
-  }
-
-  if (loading) return <div className="flex items-center justify-center h-40 text-gray-500">Memuat...</div>
-
-  // All rooms for edit dropdown
-  const allRooms = async () => { const r = await fbGet('km_rooms'); return toObj(r) }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex gap-3 items-center">
-        <input value={search} onChange={e=>setSearch(e.target.value)}
-          className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          placeholder="Cari nama, kamar, HP..." />
-        {user.role !== 'Investor' && <Btn onClick={openAdd}>+ Penyewa</Btn>}
-      </div>
-
-      <div className="bg-white rounded-xl border overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b">
-            <tr>{['Nama','Kamar','HP','JT','Sewa/Bln','Deposit','Aksi'].map(h=>(
-              <th key={h} className="text-left px-3 py-2.5 text-gray-600 font-medium">{h}</th>
-            ))}</tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {filtered.length === 0 ? (
-              <tr><td colSpan={7} className="text-center py-8 text-gray-400">Tidak ada penyewa</td></tr>
-            ) : filtered.map(t=>(
-              <tr key={t.id} className="hover:bg-gray-50">
-                <td className="px-3 py-2.5 font-medium">{t.name}</td>
-                <td className="px-3 py-2.5">{t.room}</td>
-                <td className="px-3 py-2.5">{t.phone}</td>
-                <td className="px-3 py-2.5">Tgl {t.dueDate}</td>
-                <td className="px-3 py-2.5">{rp(t.rent)}</td>
-                <td className="px-3 py-2.5">{rp(t.deposit)}</td>
-                <td className="px-3 py-2.5">
-                  {user.role !== 'Investor' && (
-                    <div className="flex gap-1.5">
-                      <Btn size="sm" variant="ghost" onClick={()=>openEdit(t)}>Edit</Btn>
-                      <Btn size="sm" variant="warning" onClick={()=>openCheckout(t)}>Checkout</Btn>
-                    </div>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Add/Edit Modal */}
-      <Modal open={modal?.type==='add'||modal?.type==='edit'} title={modal?.type==='add'?'Tambah Penyewa':'Edit Penyewa'} onClose={()=>setModal(null)}>
-        <div className="space-y-3">
-          <Input label="Nama Lengkap" value={form.name||''} onChange={e=>setForm(f=>({...f,name:e.target.value}))} />
-          <div className="grid grid-cols-2 gap-3">
-            <Input label="Nomor HP" value={form.phone||''} onChange={e=>setForm(f=>({...f,phone:e.target.value}))} />
-            <Input label="Tanggal JT (1-31)" type="number" min="1" max="31" value={form.dueDate||''} onChange={e=>setForm(f=>({...f,dueDate:e.target.value}))} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Input label="Tanggal Masuk" type="date" value={form.startDate||''} onChange={e=>setForm(f=>({...f,startDate:e.target.value}))} />
-            <Input label="No. Kamar (mis: K-201)" value={form.room||''} onChange={e=>setForm(f=>({...f,room:e.target.value}))} placeholder="K-201" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Input label="Sewa/Bulan (Rp)" type="number" value={form.rent||''} onChange={e=>setForm(f=>({...f,rent:e.target.value}))} />
-            <Input label="Deposit (Rp)" type="number" value={form.deposit||''} onChange={e=>setForm(f=>({...f,deposit:e.target.value}))} />
-          </div>
-          <Input label="Catatan" value={form.notes||''} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} />
-          <div className="flex gap-2 pt-2">
-            <Btn onClick={saveTenant} disabled={busy}>{busy?'Menyimpan...':'Simpan'}</Btn>
-            <Btn onClick={()=>setModal(null)} variant="ghost">Batal</Btn>
-          </div>
-        </div>
-      </Modal>
-
-      {/* Checkout Modal */}
-      <Modal open={modal?.type==='checkout'} title="Konfirmasi Checkout" onClose={()=>setModal(null)}>
-        <div className="space-y-3">
-          <p className="text-gray-700">Checkout penyewa <strong>{form.name}</strong> dari kamar <strong>{form.room}</strong>?</p>
-          <p className="text-sm text-gray-500">Kamar akan otomatis dikembalikan ke status Kosong.</p>
-          <div className="flex gap-2 pt-2">
-            <Btn onClick={doCheckout} disabled={busy} variant="danger">{busy?'Proses...':'Ya, Checkout'}</Btn>
-            <Btn onClick={()=>setModal(null)} variant="ghost">Batal</Btn>
-          </div>
-        </div>
-      </Modal>
-    </div>
-  )
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// PEMBAYARAN
-// ══════════════════════════════════════════════════════════════════════════════
-function Pembayaran({ user, logAction }) {
-  const [payments, setPayments] = useState([])
-  const [tenants, setTenants]   = useState([])
-  const [loading, setLoading]   = useState(true)
-  const [filter, setFilter]     = useState({ month: '', tenantId:'' }) // default: semua
-  const [modal, setModal]       = useState(false)
-  const [form, setForm]         = useState({})
-  const [busy, setBusy]         = useState(false)
-
-  const load = async () => {
-    setLoading(true)
-    const [p, t] = await Promise.all([fbGet('km_payments'), fbGet('km_tenants')])
-    setPayments(toObj(p).map(normPayment).filter(validPayment))
-    setTenants(toObj(t).map(normTenant).filter(validTenant).filter(t=>t.status!=='keluar'))
-    setLoading(false)
-  }
-  useEffect(()=>{ load() },[])
-
-  const filtered = payments.filter(p=>
-    (!filter.month || p.month===filter.month || p.month?.startsWith(filter.month) || p.bulan===filter.month) &&
-    (!filter.tenantId || p.tenantId===filter.tenantId) &&
-    p.status !== 'dibatalkan'
-  )
-  const total = filtered.reduce((s,p)=>s+(Number(p.amount)||0),0)
-
-  const openAdd = () => {
-    setForm({ tenantId:'', month:curMonth(), amount:'', date:today(), type:'sewa', notes:'' })
-    setModal(true)
-  }
-
-  const savePayment = async () => {
-    setBusy(true)
-    const tenant = tenants.find(t=>t.id===form.tenantId)
-    const id = await fbPush('km_payments', {
-      ...form, amount:Number(form.amount),
-      tenantName: tenant?.name||'',
-      tenantRoom: tenant?.room||'',
-      status:'lunas', createdAt:nowTs()
-    })
-    await logAction('Input Pembayaran', `${tenant?.name} ${rp(form.amount)} bulan ${form.month}`)
-    setBusy(false)
-    setModal(false)
-    load()
-  }
-
-  const cancelPayment = async (p) => {
-    if (!confirm(`Batalkan pembayaran ${p.tenantName}?`)) return
-    await fbPatch(`km_payments/${p.id}`, { status:'dibatalkan' })
-    await logAction('Batalkan Pembayaran', `${p.tenantName} ${rp(p.amount)}`)
-    load()
-  }
-
-  // Generate months list
-  const monthOptions = []
-  const now = new Date()
-  for (let i = 5; i >= -1; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-    const val = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
-    monthOptions.push({ val, label:`${MONTHS_ID[d.getMonth()]} ${d.getFullYear()}` })
-  }
-
-  if (loading) return <div className="flex items-center justify-center h-40 text-gray-500">Memuat...</div>
-
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap gap-3 items-end">
-        <Select value={filter.month} onChange={e=>setFilter(f=>({...f,month:e.target.value}))}>
-          <option value="">📋 Semua Bulan</option>
-          {monthOptions.map(m=><option key={m.val} value={m.val}>{m.label}</option>)}
-        </Select>
-        <Select value={filter.tenantId} onChange={e=>setFilter(f=>({...f,tenantId:e.target.value}))}>
-          <option value="">Semua Penyewa</option>
-          {tenants.map(t=><option key={t.id} value={t.id}>{t.name} ({t.room})</option>)}
-        </Select>
-        {user.role !== 'Investor' && <Btn onClick={openAdd}>+ Input Pembayaran</Btn>}
-        <div className="ml-auto text-sm font-semibold text-green-700">Total: {rp(total)}</div>
-      </div>
-
-      <div className="bg-white rounded-xl border overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b">
-            <tr>{['Tanggal','Penyewa','Kamar','Bulan','Tipe','Jumlah','Status','Aksi'].map(h=>(
-              <th key={h} className="text-left px-3 py-2.5 text-gray-600 font-medium">{h}</th>
-            ))}</tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {filtered.length===0 ? (
-              <tr><td colSpan={8} className="text-center py-8 text-gray-400">Tidak ada data</td></tr>
-            ) : filtered.sort((a,b)=>b.createdAt?.localeCompare(a.createdAt||'')||0).map(p=>(
-              <tr key={p.id} className="hover:bg-gray-50">
-                <td className="px-3 py-2.5">{fmtDate(p.date)}</td>
-                <td className="px-3 py-2.5 font-medium">{p.tenantName}</td>
-                <td className="px-3 py-2.5">{p.tenantRoom}</td>
-                <td className="px-3 py-2.5">{p.month}</td>
-                <td className="px-3 py-2.5"><Badge color={p.type==='sewa'?'blue':'purple'}>{p.type}</Badge></td>
-                <td className="px-3 py-2.5 font-semibold text-green-700">{rp(p.amount)}</td>
-                <td className="px-3 py-2.5"><Badge color="green">{p.status}</Badge></td>
-                <td className="px-3 py-2.5">
-                  {user.role==='Admin' && (
-                    <Btn size="sm" variant="danger" onClick={()=>cancelPayment(p)}>Batal</Btn>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <Modal open={modal} title="Input Pembayaran" onClose={()=>setModal(false)}>
-        <div className="space-y-3">
-          <Select label="Penyewa" value={form.tenantId||''} onChange={e=>{
-            const t = tenants.find(t=>t.id===e.target.value)
-            setForm(f=>({...f,tenantId:e.target.value,amount:t?.rent||''}))
-          }}>
-            <option value="">-- Pilih Penyewa --</option>
-            {tenants.map(t=><option key={t.id} value={t.id}>{t.name} ({t.room})</option>)}
-          </Select>
-          <Select label="Bulan" value={form.month||''} onChange={e=>setForm(f=>({...f,month:e.target.value}))}>
-            {monthOptions.map(m=><option key={m.val} value={m.val}>{m.label}</option>)}
-          </Select>
-          <div className="grid grid-cols-2 gap-3">
-            <Input label="Jumlah (Rp)" type="number" value={form.amount||''} onChange={e=>setForm(f=>({...f,amount:e.target.value}))} />
-            <Input label="Tanggal Bayar" type="date" value={form.date||''} onChange={e=>setForm(f=>({...f,date:e.target.value}))} />
-          </div>
-          <Select label="Tipe" value={form.type||'sewa'} onChange={e=>setForm(f=>({...f,type:e.target.value}))}>
-            <option value="sewa">Sewa Bulanan</option>
-            <option value="deposit">Deposit</option>
-            <option value="denda">Denda</option>
-            <option value="lainnya">Lainnya</option>
-          </Select>
-          <Input label="Catatan" value={form.notes||''} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} />
-          <div className="flex gap-2 pt-2">
-            <Btn onClick={savePayment} disabled={busy}>{busy?'Menyimpan...':'Simpan'}</Btn>
-            <Btn onClick={()=>setModal(false)} variant="ghost">Batal</Btn>
-          </div>
-        </div>
-      </Modal>
-    </div>
-  )
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// INVOICE
-// ══════════════════════════════════════════════════════════════════════════════
-function Invoice({ user, logAction }) {
-  const [invoices, setInvoices] = useState([])
-  const [tenants, setTenants]   = useState([])
-  const [loading, setLoading]   = useState(true)
-  const [modal, setModal]       = useState(false)
-  const [form, setForm]         = useState({})
-  const [busy, setBusy]         = useState(false)
-
-  const load = async () => {
-    setLoading(true)
-    const [inv, t] = await Promise.all([fbGet('km_invoices'), fbGet('km_tenants')])
-    setInvoices(toObj(inv).map(normInvoice).filter(validInvoice).sort((a,b)=>b.createdAt?.localeCompare(a.createdAt)||0))
-    setTenants(toObj(t).map(normTenant).filter(validTenant).filter(t=>t.status!=='keluar'))
-    setLoading(false)
-  }
-  useEffect(()=>{ load() },[])
-
-  const openCreate = () => {
-    const now = new Date()
-    const seq = String(invoices.length+1).padStart(3,'0')
-    const invNo = `INV-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}-${seq}`
-    setForm({ tenantId:'', month:curMonth(), amount:'', dueDate:'', notes:'', invNo })
-    setModal(true)
-  }
-
-  const createInvoice = async () => {
-    setBusy(true)
-    const tenant = tenants.find(t=>t.id===form.tenantId)
-    const inv = { ...form, amount:Number(form.amount), tenantName:tenant?.name||'', tenantRoom:tenant?.room||'', status:'belum_lunas', createdAt:nowTs() }
-    await fbPush('km_invoices', inv)
-    await logAction('Buat Invoice', `${inv.invNo} untuk ${tenant?.name}`)
-    setBusy(false)
-    setModal(false)
-    load()
-  }
-
-  const markLunas = async (inv) => {
-    await fbPatch(`km_invoices/${inv.id}`, { status:'lunas', paidAt:nowTs() })
-    // Auto-create payment
-    await fbPush('km_payments', {
-      tenantId: inv.tenantId, tenantName: inv.tenantName, tenantRoom: inv.tenantRoom,
-      month: inv.month, amount: Number(inv.amount), date: today(),
-      type:'sewa', status:'lunas', invoiceId: inv.id, createdAt: nowTs(), notes:`Dari invoice ${inv.invNo}`
-    })
-    await logAction('Tandai Lunas', `${inv.invNo}`)
-    load()
-  }
-
-  const waLink = inv => {
-    const no = inv.tenantPhone || ''
-    const waNo = no.startsWith('0') ? '62'+no.slice(1) : no
-    const msg = encodeURIComponent(`Halo ${inv.tenantName},\n\nInvoice sewa kamar ${inv.tenantRoom} bulan ${inv.month}:\n\n${inv.invNo}\nJumlah: ${rp(inv.amount)}\nJatuh Tempo: ${fmtDate(inv.dueDate)}\n\nMohon segera dilunasi. Terima kasih!\n\n${KOS_NAME}`)
-    return `https://wa.me/${waNo}?text=${msg}`
-  }
-
-  if (loading) return <div className="flex items-center justify-center h-40 text-gray-500">Memuat...</div>
-
-  const monthOptions = []
-  const now = new Date()
-  for (let i = 5; i >= -1; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-    const val = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
-    monthOptions.push({ val, label:`${MONTHS_ID[d.getMonth()]} ${d.getFullYear()}` })
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <p className="text-sm text-gray-600">{invoices.length} invoice total</p>
-        {user.role !== 'Investor' && <Btn onClick={openCreate}>+ Buat Invoice</Btn>}
-      </div>
-
-      <div className="space-y-3">
-        {invoices.length === 0 ? (
-          <div className="bg-white rounded-xl border p-8 text-center text-gray-400">Belum ada invoice</div>
-        ) : invoices.map(inv => (
-          <div key={inv.id} className={`bg-white rounded-xl border p-4 ${inv.status==='belum_lunas'?'border-yellow-200':''}`}>
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="font-semibold text-gray-800">{inv.invNo}</p>
-                <p className="text-sm text-gray-600">{inv.tenantName} — {inv.tenantRoom}</p>
-                <p className="text-sm text-gray-500">Bulan: {inv.month} · JT: {fmtDate(inv.dueDate)}</p>
-              </div>
-              <div className="text-right">
-                <p className="font-bold text-lg">{rp(inv.amount)}</p>
-                <Badge color={inv.status==='lunas'?'green':'yellow'}>{inv.status==='lunas'?'Lunas':'Belum Lunas'}</Badge>
-              </div>
-            </div>
-            {inv.status === 'belum_lunas' && user.role !== 'Investor' && (
-              <div className="flex gap-2 mt-3 pt-3 border-t">
-                <Btn size="sm" variant="success" onClick={()=>markLunas(inv)}>✓ Tandai Lunas</Btn>
-                <a href={waLink(inv)} target="_blank" rel="noreferrer">
-                  <Btn size="sm" variant="ghost">📱 Kirim WA</Btn>
-                </a>
-              </div>
-            )}
-          </div>
+      {/* Lantai filter */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mr-1">Lantai:</span>
+        {["semua",...lantais].map(l=>(
+          <button key={l} onClick={()=>setLantai(String(l))}
+            className={`px-4 py-1.5 rounded-xl text-sm font-semibold transition-all ${lantai===String(l)?"bg-indigo-600 text-white shadow-sm":"bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+            {l==="semua"?"Semua":`Lantai ${l}`}
+          </button>
         ))}
       </div>
 
-      <Modal open={modal} title="Buat Invoice" onClose={()=>setModal(false)}>
-        <div className="space-y-3">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">No Invoice</label>
-            <p className="text-sm font-mono bg-gray-50 px-3 py-2 rounded-lg border">{form.invNo}</p>
-          </div>
-          <Select label="Penyewa" value={form.tenantId||''} onChange={e=>{
-            const t = tenants.find(t=>t.id===e.target.value)
-            setForm(f=>({...f,tenantId:e.target.value,amount:t?.rent||''}))
-          }}>
-            <option value="">-- Pilih Penyewa --</option>
-            {tenants.map(t=><option key={t.id} value={t.id}>{t.name} ({t.room})</option>)}
-          </Select>
-          <Select label="Bulan" value={form.month||''} onChange={e=>setForm(f=>({...f,month:e.target.value}))}>
-            {monthOptions.map(m=><option key={m.val} value={m.val}>{m.label}</option>)}
-          </Select>
-          <div className="grid grid-cols-2 gap-3">
-            <Input label="Jumlah (Rp)" type="number" value={form.amount||''} onChange={e=>setForm(f=>({...f,amount:e.target.value}))} />
-            <Input label="Jatuh Tempo" type="date" value={form.dueDate||''} onChange={e=>setForm(f=>({...f,dueDate:e.target.value}))} />
-          </div>
-          <Input label="Catatan" value={form.notes||''} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} />
-          <div className="flex gap-2 pt-2">
-            <Btn onClick={createInvoice} disabled={busy}>{busy?'Membuat...':'Buat Invoice'}</Btn>
-            <Btn onClick={()=>setModal(false)} variant="ghost">Batal</Btn>
-          </div>
-        </div>
-      </Modal>
-    </div>
-  )
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// STATUS BAYAR
-// ══════════════════════════════════════════════════════════════════════════════
-function StatusBayar({ user }) {
-  const [tenants, setTenants]   = useState([])
-  const [payments, setPayments] = useState([])
-  const [loading, setLoading]   = useState(true)
-  const [filterMonth, setFilterMonth] = useState(curMonth())
-
-  const load = async () => {
-    setLoading(true)
-    const [t, p] = await Promise.all([fbGet('km_tenants'), fbGet('km_payments')])
-    setTenants(toObj(t).map(normTenant).filter(validTenant).filter(t=>t.status!=='keluar'))
-    setPayments(toObj(p).map(normPayment).filter(validPayment))
-    setLoading(false)
-  }
-  useEffect(()=>{ load() },[])
-
-  const isPaid = t => payments.some(p=>p.tenantId===t.id && p.month===filterMonth && p.type==='sewa' && p.status!=='dibatalkan')
-
-  const months = []
-  const now = new Date()
-  for (let i = 5; i >= -1; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-    const val = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
-    months.push({ val, label:`${MONTHS_ID[d.getMonth()]} ${d.getFullYear()}` })
-  }
-
-  const paid   = tenants.filter(t=>isPaid(t))
-  const unpaid = tenants.filter(t=>!isPaid(t))
-
-  if (loading) return <div className="flex items-center justify-center h-40 text-gray-500">Memuat...</div>
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <Select value={filterMonth} onChange={e=>setFilterMonth(e.target.value)}>
-          {months.map(m=><option key={m.val} value={m.val}>{m.label}</option>)}
-        </Select>
-        <span className="text-sm text-gray-600">
-          {paid.length} lunas / {unpaid.length} belum — {tenants.length} total
-        </span>
+      <div className="flex flex-wrap gap-3 text-xs text-slate-500">
+        {[["bg-emerald-400","Lunas"],["bg-amber-300","Belum Bayar"],["bg-red-400","Telat"],["bg-orange-300","Maintenance"],["bg-slate-200","Kosong"]].map(([c,l])=>(
+          <div key={l} className="flex items-center gap-1.5"><div className={`w-3 h-3 rounded ${c}`}/>{l}</div>
+        ))}
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <Card title="Sudah Bayar" value={paid.length} sub={`dari ${tenants.length} penyewa`} color="green" icon="✅" />
-        <Card title="Belum Bayar" value={unpaid.length} sub="bulan ini" color="red" icon="⚠️" />
-      </div>
+      {/* Summary count */}
+      <p className="text-xs text-slate-400 font-medium">
+        Menampilkan <span className="font-black text-slate-600">{filtered.length}</span> kamar
+        {lantai!=="semua" && ` di Lantai ${lantai}`}
+        {filter!=="semua" && ` · status: ${filter}`}
+      </p>
 
-      <div className="bg-white rounded-xl border overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b">
-            <tr>
-              <th className="text-left px-3 py-2.5 text-gray-600 font-medium">Penyewa</th>
-              <th className="text-left px-3 py-2.5 text-gray-600 font-medium">Kamar</th>
-              <th className="text-left px-3 py-2.5 text-gray-600 font-medium">JT</th>
-              <th className="text-left px-3 py-2.5 text-gray-600 font-medium">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {tenants.length === 0 ? (
-              <tr><td colSpan={4} className="text-center py-8 text-gray-400">Tidak ada penyewa</td></tr>
-            ) : tenants.sort((a,b)=>isPaid(b)-isPaid(a)).map(t=>(
-              <tr key={t.id} className={`hover:bg-gray-50 ${!isPaid(t)?'bg-red-50':''}`}>
-                <td className="px-3 py-2.5 font-medium">{t.name}</td>
-                <td className="px-3 py-2.5">{t.room}</td>
-                <td className="px-3 py-2.5">Tgl {t.dueDate}</td>
-                <td className="px-3 py-2.5">
-                  {isPaid(t) ? <Badge color="green">✓ Lunas</Badge> : <Badge color="red">✗ Belum</Badge>}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// KAS & KELUAR
-// ══════════════════════════════════════════════════════════════════════════════
-function KasKeluar({ user, logAction }) {
-  const [expenses, setExpenses] = useState([])
-  const [loading, setLoading]   = useState(true)
-  const [modal, setModal]       = useState(false)
-  const [form, setForm]         = useState({})
-  const [busy, setBusy]         = useState(false)
-  const [filter, setFilter]     = useState({ month: '' }) // default: semua bulan
-
-  const LIMIT_APPROVAL = 5000000
-
-  const load = async () => {
-    setLoading(true)
-    const data = await fbGet('km_expenses')
-    setExpenses(toObj(data).map(normExpense).filter(validExpense).sort((a,b)=>b.createdAt?.localeCompare(a.createdAt)||0))
-    setLoading(false)
-  }
-  useEffect(()=>{ load() },[])
-
-  // Match date against month filter — handles yyyy-mm-dd, dd/mm/yyyy, mm/yyyy, etc.
-  const matchMonth = (dateStr, monthFilter) => {
-    if (!monthFilter) return true
-    if (!dateStr) return false
-    const [yr, mo] = monthFilter.split('-') // e.g. '2026-05'
-    // Handle yyyy-mm-dd (standard)
-    if (dateStr.startsWith(monthFilter)) return true
-    // Handle dd/mm/yyyy
-    if (dateStr.includes('/')) {
-      const parts = dateStr.split('/')
-      if (parts.length === 3) return parts[2] === yr && parts[1] === mo
-      if (parts.length === 2) return parts[1] === yr && parts[0] === mo
-    }
-    // Handle mm-yyyy or mm/yyyy
-    return dateStr.includes(`${mo}-${yr}`) || dateStr.includes(`${mo}/${yr}`)
-  }
-
-  const filtered = expenses.filter(e=>
-    (!filter.month || matchMonth(e.date || e.tanggal, filter.month))
-  )
-  const total = filtered.filter(e=>e.status!=='ditolak').reduce((s,e)=>s+(Number(e.amount)||0),0)
-
-  const openAdd = () => {
-    setForm({ desc:'', amount:'', date:today(), category:'operasional', source:'kas', notes:'' })
-    setModal(true)
-  }
-
-  const saveExpense = async () => {
-    setBusy(true)
-    const amount = Number(form.amount)
-    const status = amount >= LIMIT_APPROVAL ? 'pending_approval' : 'approved'
-    await fbPush('km_expenses', { ...form, amount, status, createdAt:nowTs(), createdBy:user.name })
-    await logAction('Input Pengeluaran', `${form.desc} ${rp(amount)} ${status==='pending_approval'?'(menunggu approval)':''}`)
-    setBusy(false)
-    setModal(false)
-    load()
-  }
-
-  const approve = async (e, approved) => {
-    await fbPatch(`km_expenses/${e.id}`, { status: approved?'approved':'ditolak', approvedBy:user.name, approvedAt:nowTs() })
-    await logAction(approved?'Approve Pengeluaran':'Tolak Pengeluaran', `${e.desc} ${rp(e.amount)}`)
-    load()
-  }
-
-  const months = []
-  const now = new Date()
-  for (let i = 5; i >= -1; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-    const val = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
-    months.push({ val, label:`${MONTHS_ID[d.getMonth()]} ${d.getFullYear()}` })
-  }
-
-  const statusBadge = s => {
-    const map = { approved:{c:'green',l:'Approved'}, pending_approval:{c:'yellow',l:'Pending'}, ditolak:{c:'red',l:'Ditolak'} }
-    const m = map[s] || {c:'gray',l:s}
-    return <Badge color={m.c}>{m.l}</Badge>
-  }
-
-  if (loading) return <div className="flex items-center justify-center h-40 text-gray-500">Memuat...</div>
-
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap gap-3 items-end">
-        <Select value={filter.month} onChange={e=>setFilter(f=>({...f,month:e.target.value}))}>
-          <option value="">📋 Semua Bulan</option>
-          {months.map(m=><option key={m.val} value={m.val}>{m.label}</option>)}
-        </Select>
-        {user.role !== 'Investor' && <Btn onClick={openAdd}>+ Input Pengeluaran</Btn>}
-        <div className="ml-auto text-sm font-semibold text-red-700">Total: {rp(total)}</div>
-      </div>
-
-      {/* Pending approvals */}
-      {expenses.filter(e=>e.status==='pending_approval').length > 0 && user.role === 'Admin' && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
-          <h3 className="font-semibold text-yellow-800 mb-2">⏳ Menunggu Persetujuan (≥{rp(LIMIT_APPROVAL)})</h3>
-          {expenses.filter(e=>e.status==='pending_approval').map(e=>(
-            <div key={e.id} className="flex items-center justify-between bg-white rounded-lg p-3 mb-2 border">
-              <div>
-                <p className="font-medium text-sm">{e.desc}</p>
-                <p className="text-xs text-gray-500">{fmtDate(e.date)} · {e.source} · {e.createdBy}</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-sm">{rp(e.amount)}</span>
-                <Btn size="sm" variant="success" onClick={()=>approve(e,true)}>✓</Btn>
-                <Btn size="sm" variant="danger" onClick={()=>approve(e,false)}>✗</Btn>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="bg-white rounded-xl border overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b">
-            <tr>{['Tanggal','Deskripsi','Kategori','Sumber','Jumlah','Status'].map(h=>(
-              <th key={h} className="text-left px-3 py-2.5 text-gray-600 font-medium">{h}</th>
-            ))}</tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {filtered.length===0 ? (
-              <tr><td colSpan={6} className="text-center py-8 text-gray-400">Tidak ada data</td></tr>
-            ) : filtered.map(e=>(
-              <tr key={e.id} className={`hover:bg-gray-50 ${e.status==='ditolak'?'opacity-50':''}`}>
-                <td className="px-3 py-2.5">{fmtDate(e.date)}</td>
-                <td className="px-3 py-2.5 font-medium">{e.desc}</td>
-                <td className="px-3 py-2.5"><Badge color="gray">{e.category}</Badge></td>
-                <td className="px-3 py-2.5"><Badge color={e.source==='bank'?'blue':'purple'}>{e.source}</Badge></td>
-                <td className="px-3 py-2.5 font-semibold text-red-700">{rp(e.amount)}</td>
-                <td className="px-3 py-2.5">{statusBadge(e.status)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <Modal open={modal} title="Input Pengeluaran" onClose={()=>setModal(false)}>
-        <div className="space-y-3">
-          <Input label="Deskripsi" value={form.desc||''} onChange={e=>setForm(f=>({...f,desc:e.target.value}))} placeholder="mis: Tagihan PLN, Perbaikan AC..." />
-          <div className="grid grid-cols-2 gap-3">
-            <Input label="Jumlah (Rp)" type="number" value={form.amount||''} onChange={e=>setForm(f=>({...f,amount:e.target.value}))} />
-            <Input label="Tanggal" type="date" value={form.date||''} onChange={e=>setForm(f=>({...f,date:e.target.value}))} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Select label="Kategori" value={form.category||'operasional'} onChange={e=>setForm(f=>({...f,category:e.target.value}))}>
-              <option value="operasional">Operasional</option>
-              <option value="perawatan">Perawatan</option>
-              <option value="utilitas">Utilitas (Air/Listrik)</option>
-              <option value="gaji">Gaji/Honor</option>
-              <option value="lainnya">Lainnya</option>
-            </Select>
-            <Select label="Sumber Dana" value={form.source||'kas'} onChange={e=>setForm(f=>({...f,source:e.target.value}))}>
-              <option value="kas">Kas</option>
-              <option value="bank">Bank</option>
-            </Select>
-          </div>
-          <Input label="Catatan" value={form.notes||''} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} />
-          {Number(form.amount) >= LIMIT_APPROVAL && (
-            <p className="text-sm text-yellow-700 bg-yellow-50 px-3 py-2 rounded-lg">
-              ⚠️ Pengeluaran ≥{rp(LIMIT_APPROVAL)} memerlukan persetujuan Admin.
-            </p>
-          )}
-          <div className="flex gap-2 pt-2">
-            <Btn onClick={saveExpense} disabled={busy}>{busy?'Menyimpan...':'Simpan'}</Btn>
-            <Btn onClick={()=>setModal(false)} variant="ghost">Batal</Btn>
-          </div>
-        </div>
-      </Modal>
-    </div>
-  )
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// MUTASI BANK
-// ══════════════════════════════════════════════════════════════════════════════
-function MutasiBank({ user, logAction }) {
-  const [mutations, setMutations] = useState([])
-  const [loading, setLoading]     = useState(true)
-  const [tab, setTab]             = useState('bank') // 'bank' | 'kas'
-  const [modal, setModal]         = useState(false)
-  const [form, setForm]           = useState({})
-  const [busy, setBusy]           = useState(false)
-
-  const load = async () => {
-    setLoading(true)
-    const data = await fbGet('km_mutations')
-    setMutations(toObj(data).sort((a,b)=>b.createdAt?.localeCompare(a.createdAt)||0))
-    setLoading(false)
-  }
-  useEffect(()=>{ load() },[])
-
-  const filtered = mutations.filter(m=>m.account===tab)
-
-  const bankTotal = mutations.filter(m=>m.account==='bank').reduce((s,m)=>s+(m.type==='masuk'?1:-1)*(Number(m.amount)||0),0)
-  const kasTotal  = mutations.filter(m=>m.account==='kas').reduce((s,m)=>s+(m.type==='masuk'?1:-1)*(Number(m.amount)||0),0)
-
-  const openAdd = () => {
-    setForm({ account:tab, type:'masuk', amount:'', date:today(), desc:'', ref:'' })
-    setModal(true)
-  }
-
-  const openTransfer = () => {
-    setForm({ account:'transfer', type:'transfer', amount:'', date:today(), desc:'Transfer Bank → Kas', ref:'' })
-    setModal('transfer')
-  }
-
-  const saveMutation = async () => {
-    setBusy(true)
-    if (modal === 'transfer') {
-      // Bank keluar + Kas masuk
-      await fbPush('km_mutations', { account:'bank', type:'keluar', amount:Number(form.amount), date:form.date, desc:form.desc||'Transfer ke Kas', createdAt:nowTs() })
-      await fbPush('km_mutations', { account:'kas',  type:'masuk',  amount:Number(form.amount), date:form.date, desc:form.desc||'Transfer dari Bank', createdAt:nowTs() })
-      await logAction('Transfer Bank→Kas', rp(form.amount))
-    } else {
-      await fbPush('km_mutations', { ...form, amount:Number(form.amount), createdAt:nowTs() })
-      await logAction('Input Mutasi', `${form.account} ${form.type} ${rp(form.amount)}`)
-    }
-    setBusy(false)
-    setModal(false)
-    load()
-  }
-
-  if (loading) return <div className="flex items-center justify-center h-40 text-gray-500">Memuat...</div>
-
-  return (
-    <div className="space-y-4">
-      {/* Balances */}
-      <div className="grid grid-cols-2 gap-3">
-        <Card title="Saldo Bank" value={rp(bankTotal)} color="blue" icon="🏦" />
-        <Card title="Saldo Kas" value={rp(kasTotal)} color="green" icon="💵" />
-      </div>
-
-      {/* Tabs + Actions */}
-      <div className="flex items-center justify-between">
-        <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-          {['bank','kas'].map(t=>(
-            <button key={t} onClick={()=>setTab(t)}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition ${tab===t?'bg-white shadow text-blue-600':'text-gray-600'}`}>
-              {t === 'bank' ? '🏦 Bank' : '💵 Kas'}
+      <div className="grid grid-cols-5 sm:grid-cols-7 md:grid-cols-9 lg:grid-cols-11 gap-2">
+        {filtered.map(r => {
+          const st = getRoomStatus(r);
+          const t = tenants.find(x=>x.id===r.penyewaId);
+          return (
+            <button key={r.id} onClick={()=>openEdit(r)}
+              className={`border-2 rounded-xl p-2 text-center hover:shadow-md transition-all ${COLORS[st]}`}>
+              <p className="font-black text-slate-800 text-xs">K{r.nomor}</p>
+              <p className="text-[9px] text-slate-400">Lt {r.lantai}</p>
+              <p className="text-[9px] font-bold text-slate-600 mt-0.5 truncate">{t?t.nama.split(" ")[0]:"—"}</p>
             </button>
-          ))}
-        </div>
-        {user.role !== 'Investor' && (
-          <div className="flex gap-2">
-            <Btn size="sm" variant="ghost" onClick={openTransfer}>⇄ Transfer</Btn>
-            <Btn size="sm" onClick={openAdd}>+ Input</Btn>
-          </div>
-        )}
+          );
+        })}
       </div>
 
-      <div className="bg-white rounded-xl border overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b">
-            <tr>{['Tanggal','Deskripsi','Tipe','Jumlah'].map(h=>(
-              <th key={h} className="text-left px-3 py-2.5 text-gray-600 font-medium">{h}</th>
-            ))}</tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {filtered.length===0 ? (
-              <tr><td colSpan={4} className="text-center py-8 text-gray-400">Tidak ada mutasi</td></tr>
-            ) : filtered.map(m=>(
-              <tr key={m.id} className="hover:bg-gray-50">
-                <td className="px-3 py-2.5">{fmtDate(m.date)}</td>
-                <td className="px-3 py-2.5">{m.desc}</td>
-                <td className="px-3 py-2.5"><Badge color={m.type==='masuk'?'green':'red'}>{m.type}</Badge></td>
-                <td className={`px-3 py-2.5 font-semibold ${m.type==='masuk'?'text-green-700':'text-red-700'}`}>
-                  {m.type==='masuk'?'+':'-'}{rp(m.amount)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <Modal open={!!modal} title={modal==='transfer'?'Transfer Bank → Kas':'Input Mutasi'} onClose={()=>setModal(false)}>
-        <div className="space-y-3">
-          {modal !== 'transfer' && (
-            <div className="grid grid-cols-2 gap-3">
-              <Select label="Akun" value={form.account||'bank'} onChange={e=>setForm(f=>({...f,account:e.target.value}))}>
-                <option value="bank">Bank</option>
-                <option value="kas">Kas</option>
-              </Select>
-              <Select label="Tipe" value={form.type||'masuk'} onChange={e=>setForm(f=>({...f,type:e.target.value}))}>
-                <option value="masuk">Masuk</option>
-                <option value="keluar">Keluar</option>
-              </Select>
+      {modal && (
+        <Modal title={modal==="add"?"Tambah Kamar":`Edit Kamar K-${modal.nomor}`} onClose={()=>setModal(null)}>
+          <div className="space-y-4">
+            <div className="bg-blue-50 rounded-xl p-4">
+              <label className="text-xs font-black text-blue-700 block mb-1">KODE KAMAR *</label>
+              <input className="w-full border-2 border-blue-300 rounded-xl px-3 py-2.5 text-lg font-black text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white tracking-widest"
+                placeholder="cth: 101, A-01, B02..."
+                value={form.nomor||""} onChange={e=>setForm({...form,nomor:e.target.value})}/>
+              <p className="text-xs text-blue-500 mt-1">Kode ini yang tampil di grid kamar</p>
             </div>
-          )}
-          <div className="grid grid-cols-2 gap-3">
-            <Input label="Jumlah (Rp)" type="number" value={form.amount||''} onChange={e=>setForm(f=>({...f,amount:e.target.value}))} />
-            <Input label="Tanggal" type="date" value={form.date||''} onChange={e=>setForm(f=>({...f,date:e.target.value}))} />
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="text-xs font-bold text-slate-600 block mb-1">Lantai</label>
+                <select className={inp} value={form.lantai||1} onChange={e=>setForm({...form,lantai:+e.target.value})}>
+                  {[1,2,3,4].map(l=><option key={l} value={l}>Lantai {l}</option>)}</select></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="text-xs font-bold text-slate-600 block mb-1">Tipe</label>
+                <select className={inp} value={form.tipe||"Standard"} onChange={e=>setForm({...form,tipe:e.target.value})}>
+                  {["Standard","AC","Deluxe","VIP"].map(t=><option key={t}>{t}</option>)}</select></div>
+              <div><label className="text-xs font-bold text-slate-600 block mb-1">Harga Sewa/Bulan (Rp)</label>
+                <input type="number" className={inp} value={form.harga||0} onChange={e=>setForm({...form,harga:e.target.value})}/></div>
+            </div>
+            <div><label className="text-xs font-bold text-slate-600 block mb-1">Status</label>
+              <select className={inp} value={form.status||"kosong"} onChange={e=>setForm({...form,status:e.target.value})}>
+                <option value="kosong">Kosong</option>
+                <option value="terisi">Terisi</option>
+                <option value="maintenance">Maintenance</option>
+              </select></div>
+            <div className="flex gap-2 justify-end pt-2">
+              <Btn v="secondary" onClick={()=>setModal(null)}>Batal</Btn>
+              {isAdmin && modal!=="add" && <Btn v="danger" onClick={()=>del(modal)}><Trash2 size={14}/>Hapus</Btn>}
+              {isAdmin && <Btn onClick={save}>Simpan</Btn>}
+            </div>
           </div>
-          <Input label="Deskripsi" value={form.desc||''} onChange={e=>setForm(f=>({...f,desc:e.target.value}))} />
-          <div className="flex gap-2 pt-2">
-            <Btn onClick={saveMutation} disabled={busy}>{busy?'Menyimpan...':'Simpan'}</Btn>
-            <Btn onClick={()=>setModal(false)} variant="ghost">Batal</Btn>
-          </div>
-        </div>
-      </Modal>
+        </Modal>
+      )}
     </div>
-  )
+  );
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// LAPORAN BAGI HASIL
-// ══════════════════════════════════════════════════════════════════════════════
-function Laporan({ user }) {
-  const [payments, setPayments] = useState([])
-  const [expenses, setExpenses] = useState([])
-  const [loading, setLoading]   = useState(true)
-  const [month, setMonth]       = useState(curMonth())
+// ═══════════════════════════════════════════════
+// TENANTS PAGE
+// ═══════════════════════════════════════════════
+function TenantsPage({ role, rooms, tenants, saveTenants, saveRooms, addAudit }) {
+  const [modal,   setModal]  = useState(null);
+  const [form,    setForm]   = useState({});
+  const [search,  setSearch] = useState("");
+  const [coModal, setCoModal]= useState(null);
+  const [coForm,  setCoForm] = useState({dikembalikan:0,catatan:""});
+  const isEdit = role==="admin"||role==="staff";
 
-  const load = async () => {
-    setLoading(true)
-    const [p, e] = await Promise.all([fbGet('km_payments'), fbGet('km_expenses')])
-    setPayments(toObj(p).map(normPayment).filter(validPayment))
-    setExpenses(toObj(e).map(normExpense).filter(validExpense))
-    setLoading(false)
-  }
-  useEffect(()=>{ load() },[])
+  const filtered = tenants.filter(t=>!search||t.nama?.toLowerCase().includes(search.toLowerCase())||t.hp?.includes(search));
 
-  const months = []
-  const now = new Date()
-  for (let i = 11; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-    const val = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
-    months.push({ val, label:`${MONTHS_ID[d.getMonth()]} ${d.getFullYear()}` })
-  }
+  const openAdd = () => {
+    setForm({nama:"",hp:"",ktp:"",kontakDarurat:"",kontakDaruratHp:"",kamarId:"",
+      tanggalMasuk:new Date().toISOString().split("T")[0],jatuhTempo:1,deposit:0,catatan:""});
+    setModal("add");
+  };
 
-  const revenue = payments.filter(p=>p.month===month && p.type==='sewa' && p.status!=='dibatalkan').reduce((s,p)=>s+(Number(p.amount)||0),0)
-  const exp = expenses.filter(e=>e.date?.startsWith(month) && e.status==='approved').reduce((s,e)=>s+(Number(e.amount)||0),0)
-  const netProfit = revenue - exp
-  const ferryFee  = Math.round(netProfit * FERRY_FEE_PCT / 100)
-  const distributable = netProfit - ferryFee
+  const save = async () => {
+    if (!form.nama||!form.kamarId) return alert("Nama dan kamar wajib diisi");
+    if (modal==="add") {
+      const room = rooms.find(r=>r.id===form.kamarId);
+      if (room?.status==="terisi") return alert("Kamar sudah terisi!");
+      const t = {...form,id:uid(),aktif:true,depositStatus:"disimpan"};
+      await saveTenants([...tenants,t]);
+      await saveRooms(rooms.map(r=>r.id===form.kamarId?{...r,status:"terisi",penyewaId:t.id}:r));
+      await addAudit("PENYEWA_MASUK",`${form.nama} masuk kamar ${room?.nomor}`);
+    } else {
+      await saveTenants(tenants.map(t=>t.id===modal.id?{...t,...form}:t));
+      await addAudit("PENYEWA_EDIT",`Data ${form.nama} diupdate`);
+    }
+    setModal(null);
+  };
 
-  if (loading) return <div className="flex items-center justify-center h-40 text-gray-500">Memuat...</div>
+  const checkout = async () => {
+    const t = coModal;
+    const room = rooms.find(r=>r.id===t.kamarId);
+    await saveTenants(tenants.map(x=>x.id===t.id?{...x,aktif:false,tanggalKeluar:new Date().toISOString().split("T")[0],depositDikembalikan:coForm.dikembalikan,catatanCO:coForm.catatan}:x));
+    await saveRooms(rooms.map(r=>r.id===t.kamarId?{...r,status:"kosong",penyewaId:null}:r));
+    await addAudit("PENYEWA_KELUAR",`${t.nama} keluar kamar ${room?.nomor}. Deposit dikembalikan ${fRp(coForm.dikembalikan)}`);
+    setCoModal(null);
+  };
+
+  const avail = rooms.filter(r=>r.status==="kosong"||(modal&&modal!=="add"&&r.id===modal.kamarId));
 
   return (
-    <div className="space-y-4">
-      <Select value={month} onChange={e=>setMonth(e.target.value)}>
-        {months.map(m=><option key={m.val} value={m.val}>{m.label}</option>)}
-      </Select>
-
-      {/* P&L Summary */}
-      <div className="grid grid-cols-3 gap-3">
-        <Card title="Total Pendapatan" value={rp(revenue)} color="green" icon="💰" />
-        <Card title="Total Pengeluaran" value={rp(exp)} color="red" icon="💸" />
-        <Card title="Net Profit" value={rp(netProfit)} color={netProfit>=0?'purple':'red'} icon="📊" />
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div><h1 className="text-2xl font-black text-slate-900">Penyewa</h1>
+          <p className="text-slate-400 text-sm">{tenants.filter(t=>t.aktif).length} aktif · {tenants.filter(t=>!t.aktif).length} alumni</p></div>
+        {isEdit && <Btn onClick={openAdd}><Plus size={16}/>Tambah Penyewa</Btn>}
       </div>
 
-      {/* Bagi Hasil */}
-      <div className="bg-white rounded-xl border p-4">
-        <h3 className="font-semibold text-gray-800 mb-4">Rincian Bagi Hasil</h3>
-
-        {netProfit <= 0 ? (
-          <p className="text-yellow-700 bg-yellow-50 rounded-lg p-3 text-sm">Net profit bulan ini {rp(netProfit)} — bagi hasil tidak dapat dilakukan.</p>
-        ) : (
-          <>
-            <div className="text-sm text-gray-600 mb-3 p-3 bg-gray-50 rounded-lg space-y-1">
-              <div className="flex justify-between"><span>Net Profit</span><span className="font-semibold">{rp(netProfit)}</span></div>
-              <div className="flex justify-between text-orange-700"><span>Fee Pengelola (Ferry, {FERRY_FEE_PCT}%)</span><span>- {rp(ferryFee)}</span></div>
-              <div className="flex justify-between font-semibold text-green-700 border-t pt-1 mt-1"><span>Yang Dibagi</span><span>{rp(distributable)}</span></div>
-            </div>
-
-            <div className="space-y-2">
-              {INVESTORS.map(inv=>{
-                const share = Math.round(distributable * inv.pct / 100)
-                const ferryTotal = inv.id==='ferry' ? share + ferryFee : share
-                const isMe = inv.id === user.id
-                return (
-                  <div key={inv.id} className={`flex items-center justify-between rounded-xl px-4 py-3 border ${isMe?'bg-blue-50 border-blue-200':''}`}>
-                    <div>
-                      <p className="font-semibold text-sm">{inv.name}{isMe?' (Kamu)':''}</p>
-                      <p className="text-xs text-gray-500">{inv.pct}% kepemilikan{inv.id==='ferry'?' + fee pengelola':''}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-bold text-green-700">{rp(inv.id==='ferry'?ferryTotal:share)}</p>
-                      {inv.id==='ferry' && <p className="text-xs text-gray-500">(bagi hasil + fee)</p>}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </>
-        )}
+      <div className="relative">
+        <Search size={15} className="absolute left-4 top-3 text-slate-400"/>
+        <input className={inp+" pl-10"} placeholder="Cari nama atau HP..." value={search} onChange={e=>setSearch(e.target.value)}/>
       </div>
 
-      {/* Income detail */}
-      <div className="bg-white rounded-xl border p-4">
-        <h3 className="font-semibold text-gray-800 mb-3">Rincian Pembayaran Masuk</h3>
-        {payments.filter(p=>p.month===month&&p.type==='sewa'&&p.status!=='dibatalkan').length === 0 ? (
-          <p className="text-sm text-gray-400">Tidak ada pembayaran bulan ini</p>
-        ) : (
+      <Card>
+        <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="border-b text-gray-600">
-              <tr><th className="text-left py-1.5">Penyewa</th><th className="text-left py-1.5">Kamar</th><th className="text-right py-1.5">Jumlah</th></tr>
-            </thead>
-            <tbody>
-              {payments.filter(p=>p.month===month&&p.type==='sewa'&&p.status!=='dibatalkan').map(p=>(
-                <tr key={p.id} className="border-b border-gray-50">
-                  <td className="py-1.5">{p.tenantName}</td>
-                  <td className="py-1.5 text-gray-600">{p.tenantRoom}</td>
-                  <td className="py-1.5 text-right font-medium text-green-700">{rp(p.amount)}</td>
-                </tr>
+            <thead><tr className="border-b border-slate-100">
+              {["Kamar","Nama","HP","Masuk","JT","Deposit","Status",""].map(h=>(
+                <th key={h} className="text-left px-5 py-3.5 text-xs font-bold text-slate-400 uppercase tracking-widest">{h}</th>
               ))}
+            </tr></thead>
+            <tbody>
+              {filtered.length===0&&<tr><td colSpan={8} className="text-center py-10 text-slate-400 text-sm">Belum ada data penyewa</td></tr>}
+              {filtered.map(t=>{
+                const room=rooms.find(r=>r.id===t.kamarId);
+                return (
+                  <tr key={t.id} className="border-b border-slate-50 hover:bg-slate-50/80 transition">
+                    <td className="px-5 py-3.5 font-black text-blue-600">K-{room?.nomor||"—"}</td>
+                    <td className="px-5 py-3.5 font-bold text-slate-800">{t.nama}</td>
+                    <td className="px-5 py-3.5 text-slate-500">{t.hp||"—"}</td>
+                    <td className="px-5 py-3.5 text-slate-500">{fD(t.tanggalMasuk)}</td>
+                    <td className="px-5 py-3.5 text-slate-500">Tgl {t.jatuhTempo}</td>
+                    <td className="px-5 py-3.5 text-slate-500">{fRp(t.deposit)}</td>
+                    <td className="px-5 py-3.5"><Badge status={t.aktif?"aktif":"keluar"}/></td>
+                    <td className="px-5 py-3.5">
+                      <div className="flex gap-1.5">
+                        <button onClick={()=>{setForm({...t});setModal(t);}} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-700 transition"><Edit size={14}/></button>
+                        {isEdit&&t.aktif&&<button onClick={()=>{setCoModal(t);setCoForm({dikembalikan:t.deposit,catatan:""}); }}
+                          className="px-2.5 py-1 text-xs font-bold bg-red-50 text-red-500 hover:bg-red-100 rounded-lg transition">Checkout</button>}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
-        )}
-      </div>
+        </div>
+      </Card>
+
+      {modal && (
+        <Modal title={modal==="add"?"Tambah Penyewa":"Edit Data Penyewa"} onClose={()=>setModal(null)} size="lg">
+          <div className="grid grid-cols-2 gap-4">
+            {[{l:"Nama Lengkap *",k:"nama",f:true},{l:"No HP/WA *",k:"hp"},{l:"No KTP",k:"ktp"},{l:"Kontak Darurat",k:"kontakDarurat"},{l:"HP Darurat",k:"kontakDaruratHp"}].map(f=>(
+              <div key={f.k} className={f.f?"col-span-2":""}>
+                <label className="text-xs font-bold text-slate-600 block mb-1">{f.l}</label>
+                <input className={inp} value={form[f.k]||""} onChange={e=>setForm({...form,[f.k]:e.target.value})}/>
+              </div>
+            ))}
+            <div><label className="text-xs font-bold text-slate-600 block mb-1">Kamar *</label>
+              <select className={inp} value={form.kamarId||""} onChange={e=>setForm({...form,kamarId:e.target.value})}>
+                <option value="">— Pilih Kamar —</option>
+                {avail.map(r=><option key={r.id} value={r.id}>K-{r.nomor} (Lt {r.lantai}) · {fRp(r.harga)}/bln</option>)}
+              </select></div>
+            <div><label className="text-xs font-bold text-slate-600 block mb-1">Tanggal Masuk</label>
+              <input type="date" className={inp} value={form.tanggalMasuk||""} onChange={e=>setForm({...form,tanggalMasuk:e.target.value})}/></div>
+            <div><label className="text-xs font-bold text-slate-600 block mb-1">Jatuh Tempo (tgl per bulan)</label>
+              <input type="number" min={1} max={28} className={inp} value={form.jatuhTempo||1} onChange={e=>setForm({...form,jatuhTempo:+e.target.value})}/></div>
+            <div><label className="text-xs font-bold text-slate-600 block mb-1">Deposit (Rp)</label>
+              <input type="number" className={inp} value={form.deposit||0} onChange={e=>setForm({...form,deposit:+e.target.value})}/></div>
+            <div className="col-span-2"><label className="text-xs font-bold text-slate-600 block mb-1">Catatan</label>
+              <textarea className={inp} rows={2} value={form.catatan||""} onChange={e=>setForm({...form,catatan:e.target.value})}/></div>
+          </div>
+          <div className="flex gap-2 justify-end pt-4">
+            <Btn v="secondary" onClick={()=>setModal(null)}>Batal</Btn>
+            {isEdit&&<Btn onClick={save}>Simpan</Btn>}
+          </div>
+        </Modal>
+      )}
+
+      {coModal && (
+        <Modal title={`Checkout – ${coModal.nama}`} onClose={()=>setCoModal(null)}>
+          <div className="space-y-4">
+            <div className="bg-blue-50 rounded-xl p-4 text-sm space-y-1">
+              <p><span className="font-bold">Kamar:</span> {rooms.find(r=>r.id===coModal.kamarId)?.nomor}</p>
+              <p><span className="font-bold">Deposit tersimpan:</span> {fRp(coModal.deposit)}</p>
+            </div>
+            <div><label className="text-xs font-bold text-slate-600 block mb-1">Deposit Dikembalikan (Rp)</label>
+              <input type="number" className={inp} value={coForm.dikembalikan} onChange={e=>setCoForm({...coForm,dikembalikan:+e.target.value})}/>
+              {coModal.deposit-coForm.dikembalikan>0&&<p className="text-xs text-amber-600 mt-1">Potongan: {fRp(coModal.deposit-coForm.dikembalikan)}</p>}
+            </div>
+            <div><label className="text-xs font-bold text-slate-600 block mb-1">Catatan Checkout</label>
+              <textarea className={inp} rows={2} value={coForm.catatan} onChange={e=>setCoForm({...coForm,catatan:e.target.value})} placeholder="Alasan potongan, kondisi kamar, dll"/></div>
+            <div className="flex gap-2 justify-end">
+              <Btn v="secondary" onClick={()=>setCoModal(null)}>Batal</Btn>
+              <Btn v="danger" onClick={checkout}>Konfirmasi Checkout</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
-  )
+  );
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// PENGATURAN
-// ══════════════════════════════════════════════════════════════════════════════
-function Pengaturan({ user, logAction }) {
-  const [settings, setSettings] = useState({ kosName:KOS_NAME, bankName:'', bankNo:'', bankOwner:'' })
-  const [users, setUsers]       = useState([])
-  const [loading, setLoading]   = useState(true)
-  const [modal, setModal]       = useState(null)
-  const [form, setForm]         = useState({})
-  const [busy, setBusy]         = useState(false)
+// ═══════════════════════════════════════════════
+// PAYMENTS PAGE
+// ═══════════════════════════════════════════════
+function PaymentsPage({ role, user, rooms, tenants, payments, savePayments, addAudit }) {
+  const [modal,  setModal]  = useState(false);
+  const [form,   setForm]   = useState({});
+  const [fMonth, setFMonth] = useState(tMon());
+  const isEdit = role==="admin"||role==="staff";
+  const ms = months6();
 
-  // DB Diagnostics state
-  const [dbStatus, setDbStatus]   = useState(null)  // null | loading | results
-  const [dbChecking, setDbChecking] = useState(false)
-  const [seedBusy, setSeedBusy]   = useState(false)
-  const [seedResult, setSeedResult] = useState('')
+  const filtered = payments.filter(p=>p.periode===fMonth).sort((a,b)=>new Date(b.tanggal)-new Date(a.tanggal));
+  const total = filtered.reduce((s,p)=>s+p.nominal,0);
 
-  const load = async () => {
-    setLoading(true)
-    const [s, u] = await Promise.all([fbGet('km_settings'), fbGet('km_users')])
-    if (s) setSettings(s)
-    setUsers(toObj(u))
-    setLoading(false)
-  }
-  useEffect(()=>{ load() },[])
+  const openAdd = () => {
+    setForm({kamarId:"",penyewaId:"",periode:tMon(),nominal:0,metode:"transfer",bank:"",pengirim:"",referensi:"",tanggal:new Date().toISOString().split("T")[0],catatan:""});
+    setModal(true);
+  };
 
-  const saveSettings = async () => {
-    setBusy(true)
-    await fbSet('km_settings', settings)
-    await logAction('Update Pengaturan', 'Nama kos / rekening')
-    setBusy(false)
-    alert('Pengaturan disimpan!')
-  }
+  const selRoom = (kamarId) => {
+    const room   = rooms.find(r=>r.id===kamarId);
+    const tenant = tenants.find(t=>t.id===room?.penyewaId);
+    setForm(f=>({...f,kamarId,penyewaId:tenant?.id||"",nominal:room?.harga||0}));
+  };
 
-  const openAddUser = () => {
-    setForm({ userId:'', name:'', role:'Staff', pw:'' })
-    setModal('addUser')
-  }
-
-  const saveUser = async () => {
-    setBusy(true)
-    const key = form.userId.toLowerCase().replace(/\s+/g,'_')
-    await fbPatch(`km_users/${key}`, { name:form.name, role:form.role, pw:form.pw })
-    await logAction('Tambah/Edit User', `${form.userId} (${form.role})`)
-    setBusy(false)
-    setModal(null)
-    load()
-  }
-
-  const deleteUser = async (u) => {
-    if (!confirm(`Hapus user ${u.name}?`)) return
-    await fbDelete(`km_users/${u.id}`)
-    await logAction('Hapus User', u.name)
-    load()
-  }
-
-  // ── Clean junk records ────────────────────────────────────────────────────
-  const [cleanBusy, setCleanBusy]     = useState(false)
-  const [cleanResult, setCleanResult] = useState('')
-
-  const cleanDatabase = async () => {
-    if (!confirm('Hapus semua record kosong/invalid dari Firebase? Record valid (punya nama/nomor) tetap aman.')) return
-    setCleanBusy(true)
-    setCleanResult('')
-    const log = []
-    try {
-      // Clean rooms — keep only those with valid room number
-      const rawRooms = await fbGet('km_rooms')
-      if (rawRooms) {
-        let kept = 0, deleted = 0
-        for (const [k,v] of Object.entries(rawRooms)) {
-          const r = normRoom(v)
-          if (!validRoom(r)) {
-            await fbDelete(`km_rooms/${k}`)
-            deleted++
-          } else { kept++ }
-        }
-        log.push(`🚪 Kamar: ${kept} valid disimpan, ${deleted} junk dihapus`)
-      }
-      // Clean tenants
-      const rawTenants = await fbGet('km_tenants')
-      if (rawTenants) {
-        let kept = 0, deleted = 0
-        for (const [k,v] of Object.entries(rawTenants)) {
-          const t = normTenant(v)
-          if (!validTenant(t)) {
-            await fbDelete(`km_tenants/${k}`)
-            deleted++
-          } else { kept++ }
-        }
-        log.push(`👥 Penyewa: ${kept} valid disimpan, ${deleted} junk dihapus`)
-      }
-      // Clean payments
-      const rawPay = await fbGet('km_payments')
-      if (rawPay) {
-        let kept = 0, deleted = 0
-        for (const [k,v] of Object.entries(rawPay)) {
-          const p = normPayment(v)
-          if (!validPayment(p)) {
-            await fbDelete(`km_payments/${k}`)
-            deleted++
-          } else { kept++ }
-        }
-        log.push(`💳 Pembayaran: ${kept} valid disimpan, ${deleted} junk dihapus`)
-      }
-      // Clean expenses
-      const rawExp = await fbGet('km_expenses')
-      if (rawExp) {
-        let kept = 0, deleted = 0
-        for (const [k,v] of Object.entries(rawExp)) {
-          const e = normExpense(v)
-          if (!validExpense(e)) {
-            await fbDelete(`km_expenses/${k}`)
-            deleted++
-          } else { kept++ }
-        }
-        log.push(`💸 Pengeluaran: ${kept} valid disimpan, ${deleted} junk dihapus`)
-      }
-      // Clean invoices
-      const rawInv = await fbGet('km_invoices')
-      if (rawInv) {
-        let kept = 0, deleted = 0
-        for (const [k,v] of Object.entries(rawInv)) {
-          const i = normInvoice(v)
-          if (!validInvoice(i)) {
-            await fbDelete(`km_invoices/${k}`)
-            deleted++
-          } else { kept++ }
-        }
-        log.push(`🧾 Invoice: ${kept} valid disimpan, ${deleted} junk dihapus`)
-      }
-      // After cleanup, rebuild all 42 rooms regardless of existing count
-      const remaining = await fbGet('km_rooms')
-      const remainCount = remaining ? Object.keys(remaining).length : 0
-      if (remainCount < 42) {
-        // Force build all missing rooms
-        const floors = [{f:1,c:12},{f:2,c:12},{f:3,c:12},{f:4,c:6}]
-        let created = 0
-        for (const {f,c} of floors) {
-          for (let i=1;i<=c;i++) {
-            const key = `K_${f}${String(i).padStart(2,'0')}`
-            const no  = `K-${f}${String(i).padStart(2,'0')}`
-            // Only create if not already exist
-            const exists = remaining && remaining[key]
-            if (!exists) {
-              await fbPatch(`km_rooms/${key}`, { no, floor:f, status:'kosong', price:1500000, type:'Standar' })
-              created++
-            }
-          }
-        }
-        if (created > 0) log.push(`🏠 ${created} kamar baru berhasil dibuat (total jadi 42)`)
-      }
-      log.push('✅ Pembersihan selesai! Refresh halaman.')
-      await logAction('Bersihkan Database', log.join(' | '))
-    } catch(e) {
-      log.push('❌ Error: ' + e.message)
-    }
-    setCleanResult(log.join('\n'))
-    setCleanBusy(false)
-  }
-
-  // ── One-time migration: old Indonesian fields → new English fields ───────
-  const [migrateBusy, setMigrateBusy] = useState(false)
-  const [migrateResult, setMigrateResult] = useState('')
-
-  const migrateData = async () => {
-    if (!confirm('Migrasi akan MENULIS ULANG semua data ke format baru (field bahasa Inggris). Data lama tetap aman. Lanjutkan?')) return
-    setMigrateBusy(true)
-    setMigrateResult('')
-    const log = []
-    try {
-      // Migrate rooms
-      const rawRooms = await fbGet('km_rooms')
-      if (rawRooms) {
-        const migrated = {}
-        Object.entries(rawRooms).forEach(([k,v]) => { migrated[k] = normRoom(v) })
-        await fbSet('km_rooms', migrated)
-        log.push(`✅ ${Object.keys(migrated).length} kamar dimigrasikan`)
-      }
-      // Migrate tenants
-      const rawTenants = await fbGet('km_tenants')
-      if (rawTenants) {
-        for (const [k,v] of Object.entries(rawTenants)) {
-          await fbPatch(`km_tenants/${k}`, normTenant(v))
-        }
-        log.push(`✅ ${Object.keys(rawTenants).length} penyewa dimigrasikan`)
-      }
-      // Migrate payments
-      const rawPay = await fbGet('km_payments')
-      if (rawPay) {
-        for (const [k,v] of Object.entries(rawPay)) {
-          await fbPatch(`km_payments/${k}`, normPayment(v))
-        }
-        log.push(`✅ ${Object.keys(rawPay).length} pembayaran dimigrasikan`)
-      }
-      // Migrate expenses
-      const rawExp = await fbGet('km_expenses')
-      if (rawExp) {
-        for (const [k,v] of Object.entries(rawExp)) {
-          await fbPatch(`km_expenses/${k}`, normExpense(v))
-        }
-        log.push(`✅ ${Object.keys(rawExp).length} pengeluaran dimigrasikan`)
-      }
-      // Migrate invoices
-      const rawInv = await fbGet('km_invoices')
-      if (rawInv) {
-        for (const [k,v] of Object.entries(rawInv)) {
-          await fbPatch(`km_invoices/${k}`, normInvoice(v))
-        }
-        log.push(`✅ ${Object.keys(rawInv).length} invoice dimigrasikan`)
-      }
-      log.push('🎉 Migrasi selesai! Refresh halaman untuk melihat data.')
-      await logAction('Migrasi Database', log.join(' | '))
-    } catch(e) {
-      log.push('❌ Error: ' + e.message)
-    }
-    setMigrateResult(log.join('\n'))
-    setMigrateBusy(false)
-  }
-
-  // ── Database Diagnostics ──────────────────────────────────────────────────
-  const checkDatabase = async () => {
-    setDbChecking(true)
-    setDbStatus(null)
-    const paths = ['km_rooms','km_tenants','km_payments','km_expenses','km_invoices','km_mutations','km_logs','km_settings']
-    const results = []
-    for (const p of paths) {
-      try {
-        const res = await fetch(`${DB}/${p}.json`)
-        const text = await res.text()
-        if (text === 'null' || text === '') {
-          results.push({ path:p, count:0, status:'empty', sample:'' })
-        } else {
-          const data = JSON.parse(text)
-          if (typeof data === 'object' && data !== null) {
-            const keys = Object.keys(data)
-            const sample = JSON.stringify(Object.values(data)[0]).slice(0,80)
-            results.push({ path:p, count:keys.length, status:'ok', sample })
-          } else {
-            results.push({ path:p, count:1, status:'ok', sample:String(data).slice(0,80) })
-          }
-        }
-      } catch(e) {
-        results.push({ path:p, count:0, status:'error', sample:e.message })
-      }
-    }
-    setDbStatus(results)
-    setDbChecking(false)
-  }
-
-  // ── Data Seeder — restore baseline data ──────────────────────────────────
-  const seedData = async () => {
-    if (!confirm('Ini akan MENAMBAHKAN data contoh ke Firebase (tidak menghapus data yang ada). Lanjutkan?')) return
-    setSeedBusy(true)
-    setSeedResult('')
-    const results = []
-
-    try {
-      // Seed rooms if empty
-      const existingRooms = await fbGet('km_rooms')
-      if (!existingRooms || Object.keys(existingRooms).length === 0) {
-        const rooms = {}
-        const floors = [{f:1,c:12},{f:2,c:12},{f:3,c:12},{f:4,c:6}]
-        floors.forEach(({f,c})=>{
-          for(let i=1;i<=c;i++){
-            const no = `K-${f}${String(i).padStart(2,'0')}`
-            const key = `K_${f}${String(i).padStart(2,'0')}`
-            rooms[key] = { no, floor:f, status:'kosong', price:1500000, type:'Standar' }
-          }
-        })
-        await fbSet('km_rooms', rooms)
-        results.push('✅ 42 kamar berhasil dibuat')
-      } else {
-        results.push(`⏭️ Kamar sudah ada (${Object.keys(existingRooms).length} kamar)`)
-      }
-
-      // Seed tenant Anto
-      const existingTenants = await fbGet('km_tenants')
-      const tenantList = existingTenants ? Object.values(existingTenants) : []
-      const antoExists = tenantList.some(t=>t.name==='Anto')
-      if (!antoExists) {
-        const tenantId = await fbPush('km_tenants', {
-          name:'Anto', room:'K-201', phone:'081283020335',
-          dueDate:'21', startDate:'2026-01-01',
-          rent:1000000, deposit:1000000, status:'aktif',
-          notes:'Penyewa lama', createdAt:nowTs()
-        })
-        // Update room K_201 status
-        await fbPatch('km_rooms/K_201', { status:'isi', tenantId })
-        results.push('✅ Penyewa Anto (K-201) berhasil ditambahkan')
-      } else {
-        results.push('⏭️ Penyewa Anto sudah ada')
-      }
-
-      // Seed payment
-      const existingPay = await fbGet('km_payments')
-      const payList = existingPay ? Object.values(existingPay) : []
-      const payExists = payList.some(p=>p.tenantName==='Anto' && p.month==='2026-05')
-      if (!payExists) {
-        await fbPush('km_payments', {
-          tenantId:'', tenantName:'Anto', tenantRoom:'K-201',
-          month:'2026-05', amount:1000000, date:'2026-05-01',
-          type:'sewa', status:'lunas', createdAt:nowTs(), notes:'Seed data'
-        })
-        results.push('✅ Pembayaran Anto Mei 2026 berhasil ditambahkan')
-      } else {
-        results.push('⏭️ Pembayaran Anto Mei 2026 sudah ada')
-      }
-
-      // Seed expenses
-      const existingExp = await fbGet('km_expenses')
-      const expList = existingExp ? Object.values(existingExp) : []
-      if (expList.length === 0) {
-        await fbPush('km_expenses', {
-          desc:'Tagihan Air', amount:150000, date:'2026-05-01',
-          category:'utilitas', source:'kas', status:'approved',
-          createdBy:'Admin', createdAt:nowTs()
-        })
-        await fbPush('km_expenses', {
-          desc:'Plafon bocor', amount:250000, date:'2026-05-10',
-          category:'perawatan', source:'kas', status:'approved',
-          createdBy:'Admin', createdAt:nowTs()
-        })
-        results.push('✅ 2 pengeluaran (Air + Plafon) berhasil ditambahkan')
-      } else {
-        results.push(`⏭️ Pengeluaran sudah ada (${expList.length} data)`)
-      }
-
-      await logAction('Seed Database', results.join(' | '))
-      setSeedResult(results.join('\n'))
-    } catch(e) {
-      setSeedResult('❌ Error: ' + e.message)
-    }
-    setSeedBusy(false)
-  }
-
-  if (loading) return <div className="flex items-center justify-center h-40 text-gray-500">Memuat...</div>
+  const save = async () => {
+    if (!form.kamarId||!form.nominal||!form.periode) return alert("Kamar, nominal, dan periode wajib diisi");
+    const np = [...payments,{...form,id:uid(),nominal:+form.nominal,inputBy:user,inputAt:now()}];
+    await savePayments(np);
+    const room=rooms.find(r=>r.id===form.kamarId); const t=tenants.find(t=>t.id===form.penyewaId);
+    await addAudit("BAYAR",`${t?.nama||"?"} (K-${room?.nomor}) bayar ${fRp(form.nominal)} – ${mLbl(form.periode)}`);
+    setModal(false);
+  };
 
   return (
     <div className="space-y-5">
-      {/* General Settings */}
-      <div className="bg-white rounded-xl border p-4">
-        <h3 className="font-semibold text-gray-800 mb-4">Informasi Kos</h3>
-        <div className="space-y-3">
-          <Input label="Nama Kos" value={settings.kosName||''} onChange={e=>setSettings(s=>({...s,kosName:e.target.value}))} />
-          <div className="grid grid-cols-2 gap-3">
-            <Input label="Nama Bank" value={settings.bankName||''} onChange={e=>setSettings(s=>({...s,bankName:e.target.value}))} placeholder="mis: BCA" />
-            <Input label="No. Rekening" value={settings.bankNo||''} onChange={e=>setSettings(s=>({...s,bankNo:e.target.value}))} />
-          </div>
-          <Input label="Atas Nama" value={settings.bankOwner||''} onChange={e=>setSettings(s=>({...s,bankOwner:e.target.value}))} />
-          <Btn onClick={saveSettings} disabled={busy}>{busy?'Menyimpan...':'Simpan Pengaturan'}</Btn>
-        </div>
+      <div className="flex items-center justify-between">
+        <div><h1 className="text-2xl font-black text-slate-900">Pembayaran Sewa</h1>
+          <p className="text-slate-400 text-sm">{filtered.length} transaksi · {fRp(total)}</p></div>
+        {isEdit&&<Btn onClick={openAdd}><Plus size={16}/>Input Pembayaran</Btn>}
       </div>
 
-      {/* ── DATABASE DIAGNOSTICS ── */}
-      <div className="bg-white rounded-xl border p-4">
-        <h3 className="font-semibold text-gray-800 mb-1">🔍 Cek Database Firebase</h3>
-        <p className="text-xs text-gray-500 mb-3">Cek koneksi dan isi setiap tabel di Firebase Realtime Database</p>
+      <div className="flex gap-2 flex-wrap">
+        {ms.map(m=>(
+          <button key={m} onClick={()=>setFMonth(m)}
+            className={`px-4 py-1.5 rounded-xl text-sm font-semibold transition-all ${fMonth===m?"bg-blue-600 text-white shadow-sm":"bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+            {mLbl(m)}
+          </button>
+        ))}
+      </div>
+
+      <Card>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr className="border-b border-slate-100">
+              {["Kamar","Penyewa","Periode","Nominal","Metode","Bank / Pengirim","Tgl Bayar","Input"].map(h=>(
+                <th key={h} className="text-left px-5 py-3.5 text-xs font-bold text-slate-400 uppercase tracking-widest">{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {filtered.length===0&&<tr><td colSpan={8} className="text-center py-10 text-slate-400 text-sm">Belum ada pembayaran {mLbl(fMonth)}</td></tr>}
+              {filtered.map(p=>{
+                const room=rooms.find(r=>r.id===p.kamarId); const t=tenants.find(t=>t.id===p.penyewaId);
+                return (
+                  <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50/80 transition">
+                    <td className="px-5 py-3.5 font-black text-blue-600">K-{room?.nomor||"—"}</td>
+                    <td className="px-5 py-3.5 font-bold text-slate-800">{t?.nama||"—"}</td>
+                    <td className="px-5 py-3.5 text-slate-500">{mLbl(p.periode)}</td>
+                    <td className="px-5 py-3.5 font-black text-emerald-600">{fRp(p.nominal)}</td>
+                    <td className="px-5 py-3.5 text-slate-500 capitalize">{p.metode}</td>
+                    <td className="px-5 py-3.5 text-slate-500">{[p.bank,p.pengirim].filter(Boolean).join(" · ")||"—"}</td>
+                    <td className="px-5 py-3.5 text-slate-500">{fD(p.tanggal)}</td>
+                    <td className="px-5 py-3.5 text-slate-400 text-xs">{p.inputBy}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {modal && (
+        <Modal title="Input Pembayaran Sewa" onClose={()=>setModal(false)}>
+          <div className="space-y-4">
+            <div><label className="text-xs font-bold text-slate-600 block mb-1">Kamar *</label>
+              <select className={inp} value={form.kamarId} onChange={e=>selRoom(e.target.value)}>
+                <option value="">— Pilih Kamar —</option>
+                {rooms.filter(r=>r.status==="terisi").map(r=>{
+                  const t=tenants.find(x=>x.id===r.penyewaId);
+                  return <option key={r.id} value={r.id}>K-{r.nomor} – {t?.nama||"?"}</option>;
+                })}
+              </select></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="text-xs font-bold text-slate-600 block mb-1">Periode *</label>
+                <select className={inp} value={form.periode} onChange={e=>setForm({...form,periode:e.target.value})}>
+                  {ms.map(m=><option key={m} value={m}>{mLbl(m)}</option>)}</select></div>
+              <div><label className="text-xs font-bold text-slate-600 block mb-1">Nominal (Rp) *</label>
+                <input type="number" className={inp} value={form.nominal||0} onChange={e=>setForm({...form,nominal:e.target.value})}/></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="text-xs font-bold text-slate-600 block mb-1">Metode</label>
+                <select className={inp} value={form.metode} onChange={e=>setForm({...form,metode:e.target.value})}>
+                  <option value="transfer">Transfer Bank</option><option value="tunai">Tunai</option></select></div>
+              <div><label className="text-xs font-bold text-slate-600 block mb-1">Bank</label>
+                <input className={inp} placeholder="BCA, BRI, Mandiri..." value={form.bank||""} onChange={e=>setForm({...form,bank:e.target.value})}/></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="text-xs font-bold text-slate-600 block mb-1">Nama Pengirim</label>
+                <input className={inp} value={form.pengirim||""} onChange={e=>setForm({...form,pengirim:e.target.value})}/></div>
+              <div><label className="text-xs font-bold text-slate-600 block mb-1">No. Referensi</label>
+                <input className={inp} value={form.referensi||""} onChange={e=>setForm({...form,referensi:e.target.value})}/></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="text-xs font-bold text-slate-600 block mb-1">Tanggal Bayar</label>
+                <input type="date" className={inp} value={form.tanggal||""} onChange={e=>setForm({...form,tanggal:e.target.value})}/></div>
+              <div><label className="text-xs font-bold text-slate-600 block mb-1">Catatan</label>
+                <input className={inp} value={form.catatan||""} onChange={e=>setForm({...form,catatan:e.target.value})}/></div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <Btn v="secondary" onClick={()=>setModal(false)}>Batal</Btn>
+              <Btn onClick={save}>Simpan Pembayaran</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════
+// EXPENSES PAGE
+// ═══════════════════════════════════════════════
+function ExpensesPage({ role, user, expenses, saveExpenses, addAudit }) {
+  const [modal,  setModal]  = useState(false);
+  const [form,   setForm]   = useState({});
+  const [fMonth, setFMonth] = useState(tMon());
+  const isEdit = role==="admin"||role==="staff";
+  const isInv  = role==="admin"||role==="investor";
+  const ms = months6();
+
+  const filtered = expenses.filter(e=>e.periode===fMonth).sort((a,b)=>new Date(b.tanggal)-new Date(a.tanggal));
+  const totApproved = filtered.filter(e=>e.status==="approved").reduce((s,e)=>s+e.nominal,0);
+  const totPending  = filtered.filter(e=>e.status==="pending").reduce((s,e)=>s+e.nominal,0);
+
+  const openAdd = () => {
+    setForm({kategori:"Listrik",nominal:0,deskripsi:"",tanggal:new Date().toISOString().split("T")[0],periode:tMon()});
+    setModal(true);
+  };
+
+  const save = async () => {
+    if (!form.deskripsi||!form.nominal) return alert("Deskripsi dan nominal wajib diisi");
+    const need = +form.nominal > 5000000;
+    const ne = [...expenses,{...form,id:uid(),nominal:+form.nominal,status:need?"pending":"approved",approvals:[],inputBy:user,inputAt:now()}];
+    await saveExpenses(ne);
+    await addAudit("PENGELUARAN",`${form.kategori}: ${form.deskripsi} – ${fRp(form.nominal)} [${need?"PENDING":"AUTO-APPROVED"}]`);
+    setModal(false);
+  };
+
+  const approve = async (e) => {
+    if (e.approvals?.some(a=>a.by===user)) return alert("Anda sudah menyetujui pengeluaran ini");
+    const newApp = [...(e.approvals||[]),{by:user,at:now()}];
+    const done   = newApp.length>=2;
+    await saveExpenses(expenses.map(x=>x.id===e.id?{...x,approvals:newApp,status:done?"approved":"pending"}:x));
+    await addAudit("APPROVE",`${user} setuju: ${e.deskripsi} ${fRp(e.nominal)}${done?" — FINAL APPROVED":" (1/2)"}`);
+  };
+
+  const reject = async (e) => {
+    if (!confirm("Tolak pengeluaran ini?")) return;
+    await saveExpenses(expenses.map(x=>x.id===e.id?{...x,status:"rejected"}:x));
+    await addAudit("TOLAK",`${user} tolak: ${e.deskripsi} ${fRp(e.nominal)}`);
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div><h1 className="text-2xl font-black text-slate-900">Kas & Pengeluaran</h1>
+          <p className="text-slate-400 text-sm">Disetujui: {fRp(totApproved)} · Pending: {fRp(totPending)}</p></div>
+        {isEdit&&<Btn onClick={openAdd}><Plus size={16}/>Input Pengeluaran</Btn>}
+      </div>
+
+      <div className="flex gap-2 flex-wrap">
+        {ms.map(m=>(
+          <button key={m} onClick={()=>setFMonth(m)}
+            className={`px-4 py-1.5 rounded-xl text-sm font-semibold transition-all ${fMonth===m?"bg-blue-600 text-white shadow-sm":"bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+            {mLbl(m)}
+          </button>
+        ))}
+      </div>
+
+      <Card>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr className="border-b border-slate-100">
+              {["Tgl","Kategori","Deskripsi","Nominal","Status","Approval",""].map(h=>(
+                <th key={h} className="text-left px-5 py-3.5 text-xs font-bold text-slate-400 uppercase tracking-widest">{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {filtered.length===0&&<tr><td colSpan={7} className="text-center py-10 text-slate-400 text-sm">Belum ada pengeluaran {mLbl(fMonth)}</td></tr>}
+              {filtered.map(e=>{
+                const alreadyApp = e.approvals?.some(a=>a.by===user);
+                return (
+                  <tr key={e.id} className={`border-b border-slate-50 hover:bg-slate-50/80 transition ${e.status==="pending"?"bg-amber-50/40":""}`}>
+                    <td className="px-5 py-3.5 text-slate-500">{fD(e.tanggal)}</td>
+                    <td className="px-5 py-3.5"><span className="text-xs font-bold bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full">{e.kategori}</span></td>
+                    <td className="px-5 py-3.5 font-medium text-slate-800">{e.deskripsi}</td>
+                    <td className="px-5 py-3.5 font-black text-red-600">{fRp(e.nominal)}</td>
+                    <td className="px-5 py-3.5"><Badge status={e.status}/></td>
+                    <td className="px-5 py-3.5 text-xs text-slate-400">
+                      {e.nominal>5000000&&<span>{e.approvals?.length||0}/2 {e.approvals?.map(a=><span key={a.by} className="ml-1 font-bold text-emerald-600">{a.by}✓</span>)}</span>}
+                    </td>
+                    <td className="px-5 py-3.5">
+                      {e.status==="pending"&&isInv&&(
+                        <div className="flex gap-1.5">
+                          {!alreadyApp&&<button onClick={()=>approve(e)} className="px-2.5 py-1 text-xs font-bold bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded-lg transition flex items-center gap-1"><Check size={12}/>Setuju</button>}
+                          <button onClick={()=>reject(e)} className="px-2.5 py-1 text-xs font-bold bg-red-50 text-red-500 hover:bg-red-100 rounded-lg transition flex items-center gap-1"><X size={12}/>Tolak</button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {modal && (
+        <Modal title="Input Pengeluaran" onClose={()=>setModal(false)}>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="text-xs font-bold text-slate-600 block mb-1">Kategori</label>
+                <select className={inp} value={form.kategori} onChange={e=>setForm({...form,kategori:e.target.value})}>
+                  {["Listrik","Air","Kebersihan","Keamanan","Pemeliharaan","Iuran RT/RW","Lain-lain"].map(c=><option key={c}>{c}</option>)}</select></div>
+              <div><label className="text-xs font-bold text-slate-600 block mb-1">Periode</label>
+                <select className={inp} value={form.periode} onChange={e=>setForm({...form,periode:e.target.value})}>
+                  {ms.map(m=><option key={m} value={m}>{mLbl(m)}</option>)}</select></div>
+            </div>
+            <div><label className="text-xs font-bold text-slate-600 block mb-1">Deskripsi *</label>
+              <input className={inp} value={form.deskripsi||""} onChange={e=>setForm({...form,deskripsi:e.target.value})} placeholder="Tagihan PLN bulan Mei..."/></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="text-xs font-bold text-slate-600 block mb-1">Nominal (Rp) *</label>
+                <input type="number" className={inp} value={form.nominal||0} onChange={e=>setForm({...form,nominal:e.target.value})}/>
+                {+form.nominal>5000000&&<p className="text-xs text-amber-600 mt-1.5 font-semibold">⚠ &gt; Rp 5 juta — butuh 2 approval investor</p>}
+              </div>
+              <div><label className="text-xs font-bold text-slate-600 block mb-1">Tanggal</label>
+                <input type="date" className={inp} value={form.tanggal||""} onChange={e=>setForm({...form,tanggal:e.target.value})}/></div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <Btn v="secondary" onClick={()=>setModal(false)}>Batal</Btn>
+              <Btn onClick={save}>Simpan</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════
+// REPORTS PAGE
+// ═══════════════════════════════════════════════
+function ReportsPage({ rooms, tenants, payments, expenses, settings }) {
+  const [month, setMonth] = useState(tMon());
+  const ms = months6().concat(Array.from({length:6},(_,i)=>{ const d=new Date(); d.setMonth(d.getMonth()-6-i); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; }));
+
+  const mPay  = payments.filter(p=>p.periode===month);
+  const mExp  = expenses.filter(e=>e.periode===month&&e.status==="approved");
+  const totIn = mPay.reduce((s,p)=>s+p.nominal,0);
+  const totEx = mExp.reduce((s,e)=>s+e.nominal,0);
+  const occ   = rooms.length>0?Math.round(rooms.filter(r=>r.status==="terisi").length/rooms.length*100):0;
+
+  const kas   = settings.kasOperasional||10000000;
+  const fee   = settings.feeManager||10;
+  const k     = settings.kepemilikan||DEF.kepemilikan;
+  const bersih= Math.max(0,totIn-kas);
+  const fFerry= bersih*(fee/100);
+  const dibagi= bersih-fFerry;
+  const bagian= { ricy:dibagi*(k.ricy/100), arief:dibagi*(k.arief/100), ferry:dibagi*(k.ferry/100)+fFerry };
+
+  const byKat = mExp.reduce((a,e)=>{a[e.kategori]=(a[e.kategori]||0)+e.nominal;return a;},{});
+
+  const doPrint = () => {
+    const w = window.open("","_blank");
+    w.document.write(`<!DOCTYPE html><html><head><title>Laporan Kos Meruya – ${mLbl(month)}</title>
+    <style>body{font-family:sans-serif;max-width:800px;margin:30px auto;color:#1e293b}h1{color:#1d4ed8;margin-bottom:4px}h2{margin-top:24px;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:6px}table{width:100%;border-collapse:collapse;margin-bottom:16px}th,td{text-align:left;padding:8px 12px;border:1px solid #e2e8f0}th{background:#f8fafc;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}tr:nth-child(even){background:#f8fafc}.right{text-align:right}.green{color:#059669;font-weight:700}.red{color:#dc2626;font-weight:700}.big{font-size:20px;font-weight:900}</style>
+    </head><body>
+    <h1>🏠 Kos Meruya — Laporan Keuangan</h1><p style="color:#64748b">Periode: <strong>${mLbl(month)}</strong> · Dibuat: ${new Date().toLocaleDateString("id-ID")} · Occupancy: ${occ}%</p>
+    <h2>Ringkasan Keuangan</h2>
+    <table><tr><th>Item</th><th class="right">Nilai</th></tr>
+    <tr><td>Total Pendapatan Sewa</td><td class="right green">${fRp(totIn)}</td></tr>
+    <tr><td>Kas Operasional Disisihkan</td><td class="right red">– ${fRp(kas)}</td></tr>
+    <tr><td>Fee Pengelola (${fee}%)</td><td class="right red">– ${fRp(fFerry)}</td></tr>
+    <tr><td><strong>Total Dibagikan ke Investor</strong></td><td class="right big">${fRp(dibagi)}</td></tr></table>
+    <h2>Bagi Hasil Investor</h2>
+    <table><tr><th>Investor</th><th>Kepemilikan</th><th class="right">Jumlah</th></tr>
+    <tr><td>Ricy Candra</td><td>${k.ricy}%</td><td class="right">${fRp(bagian.ricy)}</td></tr>
+    <tr><td>Arief Wahyudi</td><td>${k.arief}%</td><td class="right">${fRp(bagian.arief)}</td></tr>
+    <tr><td>Ferry Lukas</td><td>${k.ferry}% + fee pengelola</td><td class="right">${fRp(bagian.ferry)}</td></tr></table>
+    <h2>Detail Pembayaran Sewa (${mPay.length} transaksi)</h2>
+    <table><tr><th>Kamar</th><th>Penyewa</th><th>Tgl Bayar</th><th>Metode</th><th class="right">Nominal</th></tr>
+    ${mPay.map(p=>{const r=rooms.find(x=>x.id===p.kamarId);const t=tenants.find(x=>x.id===p.penyewaId);return`<tr><td>K-${r?.nomor||"—"}</td><td>${t?.nama||"—"}</td><td>${fD(p.tanggal)}</td><td>${p.metode}</td><td class="right green">${fRp(p.nominal)}</td></tr>`;}).join("")}
+    <tr><td colspan="4"><strong>Total</strong></td><td class="right green big">${fRp(totIn)}</td></tr></table>
+    <h2>Detail Pengeluaran (${mExp.length} transaksi)</h2>
+    <table><tr><th>Tgl</th><th>Kategori</th><th>Deskripsi</th><th class="right">Nominal</th></tr>
+    ${mExp.map(e=>`<tr><td>${fD(e.tanggal)}</td><td>${e.kategori}</td><td>${e.deskripsi}</td><td class="right red">${fRp(e.nominal)}</td></tr>`).join("")}
+    <tr><td colspan="3"><strong>Total</strong></td><td class="right red big">${fRp(totEx)}</td></tr></table>
+    <p style="margin-top:40px;color:#94a3b8;font-size:12px">Dokumen ini digenerate otomatis oleh Sistem Manajemen Kos Meruya · ${new Date().toLocaleString("id-ID")}</p>
+    </body></html>`);
+    w.document.close(); w.print();
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div><h1 className="text-2xl font-black text-slate-900">Laporan Keuangan</h1>
+          <p className="text-slate-400 text-sm">{mLbl(month)}</p></div>
+        <Btn v="secondary" onClick={doPrint}><Download size={16}/>Export / Cetak PDF</Btn>
+      </div>
+
+      <div className="flex gap-2 flex-wrap">
+        {ms.slice(0,12).map(m=>(
+          <button key={m} onClick={()=>setMonth(m)}
+            className={`px-4 py-1.5 rounded-xl text-sm font-semibold transition-all ${month===m?"bg-blue-600 text-white shadow-sm":"bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+            {mLbl(m)}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          {l:"Pendapatan",v:fRp(totIn),c:"emerald",s:`${mPay.length} pembayaran`},
+          {l:"Pengeluaran",v:fRp(totEx),c:"red",s:`${mExp.length} transaksi`},
+          {l:"Occupancy",v:`${occ}%`,c:"blue",s:`${rooms.filter(r=>r.status==="terisi").length}/${rooms.length} kamar`},
+          {l:"Total Dibagi",v:fRp(dibagi),c:"purple",s:"setelah potongan"},
+        ].map(s=>(
+          <Card key={s.l} className="p-5">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{s.l}</p>
+            <p className={`text-2xl font-black mt-2 text-${s.c}-600`}>{s.v}</p>
+            <p className="text-xs text-slate-400 mt-1">{s.s}</p>
+          </Card>
+        ))}
+      </div>
+
+      <Card className="p-6">
+        <h2 className="font-black text-slate-900 mb-5">Kalkulasi Bagi Hasil</h2>
+        <div className="space-y-3 mb-6">
+          {[
+            ["Total Pendapatan Sewa",        "+"+fRp(totIn),       "text-emerald-600"],
+            [`Kas Operasional Disisihkan`,    "–"+fRp(kas),         "text-red-500"],
+            [`Fee Pengelola Ferry (${fee}%)`, "–"+fRp(fFerry),      "text-red-500"],
+          ].map(([l,v,c])=>(
+            <div key={l} className="flex justify-between py-2.5 border-b border-slate-50">
+              <span className="text-sm text-slate-500">{l}</span>
+              <span className={`font-black ${c}`}>{v}</span>
+            </div>
+          ))}
+          <div className="flex justify-between pt-1">
+            <span className="font-black text-slate-800">Total Dibagikan ke Investor</span>
+            <span className="font-black text-lg text-slate-900">{fRp(dibagi)}</span>
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-4">
+          {[{n:"Ricy Candra",key:"ricy",p:k.ricy},{n:"Arief Wahyudi",key:"arief",p:k.arief},{n:"Ferry Lukas",key:"ferry",p:k.ferry,fee:true}].map(inv=>(
+            <div key={inv.key} className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-5 text-center border border-blue-100">
+              <p className="font-black text-slate-800">{inv.n}</p>
+              <p className="text-xs text-slate-400 mt-0.5">{inv.p}%{inv.fee?<><br/><span className="text-blue-500">+ fee {fRp(fFerry)}</span></>:""}</p>
+              <p className="text-2xl font-black text-blue-700 mt-3">{fRp(bagian[inv.key])}</p>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {Object.keys(byKat).length>0&&(
+        <Card className="p-6">
+          <h2 className="font-black text-slate-900 mb-4">Pengeluaran per Kategori</h2>
+          <div className="space-y-3">
+            {Object.entries(byKat).sort((a,b)=>b[1]-a[1]).map(([kat,val])=>(
+              <div key={kat} className="flex items-center gap-4">
+                <span className="text-sm text-slate-600 w-32 flex-shrink-0">{kat}</span>
+                <div className="flex-1 bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                  <div className="bg-red-400 h-2.5 rounded-full transition-all" style={{width:`${totEx>0?Math.round(val/totEx*100):0}%`}}/>
+                </div>
+                <span className="text-sm font-black text-slate-700 w-36 text-right">{fRp(val)}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+      {/* Invoice activity log */}
+      {(() => {
+        const invLogs = (audit||[]).filter(a=>a.action==="INVOICE"||a.action==="INV_LUNAS").slice(0,20);
+        if (!invLogs.length) return null;
+        return (
+          <Card>
+            <div className="px-6 py-4 border-b border-slate-100">
+              <h2 className="font-black text-slate-900">Log Aktivitas Invoice</h2>
+              <p className="text-xs text-slate-400 mt-0.5">Siapa buat, siapa lunasin — tercatat semua</p>
+            </div>
+            <div className="divide-y divide-slate-50">
+              {invLogs.map(a=>(
+                <div key={a.id} className="flex items-start gap-3 px-6 py-3">
+                  <span className={`text-xs font-bold px-2.5 py-1 rounded-full flex-shrink-0 mt-0.5 ${a.action==="INV_LUNAS"?"bg-emerald-100 text-emerald-700":"bg-blue-100 text-blue-700"}`}>
+                    {a.action==="INV_LUNAS"?"✓ LUNAS":"DIBUAT"}
+                  </span>
+                  <div className="flex-1">
+                    <p className="text-sm text-slate-800">{a.detail}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      <span className="font-bold">{a.by}</span> · {fD(a.at)} {new Date(a.at).toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit"})}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        );
+      })()}
+    </div>
+  );
+}
+// ═══════════════════════════════════════════════
+function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, saveRooms }) {
+  const [form, setForm]    = useState({...settings, kepemilikan:{...settings.kepemilikan}});
+  const [pins, setPins]    = useState({...settings.pins});
+  const [saved, setSaved]  = useState(false);
+
+  // Floor config: { lantai: { prefix, count } }
+  const initFloorCfg = () => {
+    const cfg = {};
+    rooms.forEach(r => {
+      if (!cfg[r.lantai]) cfg[r.lantai] = { count: 0, prefix: `${r.lantai}-` };
+      cfg[r.lantai].count++;
+    });
+    // detect prefix from existing room names
+    Object.keys(cfg).forEach(lt => {
+      const sample = rooms.find(r=>r.lantai===+lt);
+      if (sample) {
+        const m = sample.nomor.match(/^([A-Za-z0-9]*[^0-9])(\d+)$/);
+        cfg[lt].prefix = m ? m[1] : `${lt}-`;
+      }
+    });
+    return cfg;
+  };
+  const [floorCfg, setFloorCfg] = useState(initFloorCfg);
+  const [newLantai, setNewLantai] = useState("");
+
+  const total = (+form.kepemilikan?.ricy||0)+(+form.kepemilikan?.arief||0)+(+form.kepemilikan?.ferry||0);
+  const valid = Math.abs(total-100)<0.01;
+
+  const applyFloorConfig = async () => {
+    let updated = [...rooms];
+    const msgs = [];
+
+    for (const [lt, cfg] of Object.entries(floorCfg)) {
+      const lantai = +lt;
+      const target = +cfg.count || 0;
+      const prefix = cfg.prefix || `${lt}-`;
+      const floorRooms = updated.filter(r => r.lantai === lantai);
+      const diff = target - floorRooms.length;
+
+      if (diff > 0) {
+        // Add new rooms
+        const usedNomors = new Set(updated.map(r => r.nomor));
+        let seq = floorRooms.length + 1;
+        for (let i = 0; i < diff; i++) {
+          let nomor = `${prefix}${String(seq).padStart(2,"0")}`;
+          while (usedNomors.has(nomor)) { seq++; nomor = `${prefix}${String(seq).padStart(2,"0")}`; }
+          usedNomors.add(nomor);
+          updated.push({ id:uid(), nomor, lantai, tipe:"Standard", harga:0, status:"kosong", penyewaId:null });
+          seq++;
+        }
+        msgs.push(`Lantai ${lantai}: +${diff} kamar baru`);
+      } else if (diff < 0) {
+        // Remove empty rooms only
+        const toRemove = Math.abs(diff);
+        const empty = floorRooms.filter(r => r.status==="kosong").slice(-toRemove);
+        if (empty.length < toRemove) msgs.push(`Lantai ${lantai}: ${toRemove-empty.length} kamar terisi, tidak bisa dihapus. Hanya ${empty.length} kamar kosong yang dihapus.`);
+        else msgs.push(`Lantai ${lantai}: −${empty.length} kamar dihapus`);
+        const removeIds = new Set(empty.map(r=>r.id));
+        updated = updated.filter(r => !removeIds.has(r.id));
+      } else {
+        // Update prefix only — rename rooms that still follow old auto-pattern
+        const toRename = floorRooms.filter(r => r.status==="kosong");
+        const usedNomors = new Set(updated.filter(r=>!toRename.includes(r)).map(r=>r.nomor));
+        let seq = 1;
+        toRename.forEach(r => {
+          let nomor = `${prefix}${String(seq).padStart(2,"0")}`;
+          while (usedNomors.has(nomor)) { seq++; nomor = `${prefix}${String(seq).padStart(2,"0")}`; }
+          usedNomors.add(nomor); seq++;
+          updated = updated.map(x => x.id===r.id ? {...x, nomor} : x);
+        });
+      }
+    }
+
+    await saveRooms(updated);
+    await addAudit("FLOOR_CONFIG", `Konfigurasi lantai diterapkan: ${msgs.join(" | ")}`);
+    alert("✓ Konfigurasi diterapkan!\n\n" + msgs.join("\n"));
+  };
+
+  const addFloor = () => {
+    if (!newLantai || floorCfg[newLantai]) return;
+    setFloorCfg({...floorCfg, [newLantai]: { count:0, prefix:`${newLantai}-` }});
+    setNewLantai("");
+  };
+
+  const removeFloor = (lt) => {
+    const occupied = rooms.filter(r=>r.lantai===+lt&&r.status==="terisi").length;
+    if (occupied>0) return alert(`Lantai ${lt} masih ada ${occupied} kamar terisi!`);
+    if (!confirm(`Hapus konfigurasi Lantai ${lt}? Semua kamar kosong di lantai ini akan dihapus.`)) return;
+    const {[lt]:_, ...rest} = floorCfg;
+    setFloorCfg(rest);
+    saveRooms(rooms.filter(r=>r.lantai!==+lt));
+  };
+
+  const totalRoomsConfig = Object.values(floorCfg).reduce((s,c)=>s+(+c.count||0),0);
+
+  const doSave = async () => {
+    if (!valid) return alert(`Total kepemilikan harus 100%. Sekarang: ${total.toFixed(3)}%`);
+    const ns = {
+      ...form,
+      kepemilikan:{ricy:+form.kepemilikan.ricy,arief:+form.kepemilikan.arief,ferry:+form.kepemilikan.ferry},
+      pins,
+      companyInfo: form.companyInfo||DEF.companyInfo,
+      bankAccounts: form.bankAccounts||[],
+    };
+    await saveSettings(ns);
+    await addAudit("SETTINGS",`${user} mengupdate pengaturan sistem`);
+    setSaved(true); setTimeout(()=>setSaved(false),3000);
+  };
+
+  return (
+    <div className="space-y-5 max-w-2xl">
+      <div><h1 className="text-2xl font-black text-slate-900">Pengaturan</h1>
+        <p className="text-slate-400 text-sm">Admin only — perubahan berlaku langsung</p></div>
+
+      {/* FLOOR & ROOM CONFIG */}
+      <Card className="p-6">
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-2">
+            <Building size={20} className="text-indigo-600"/>
+            <h2 className="font-black text-slate-900">Konfigurasi Lantai & Kamar</h2>
+          </div>
+          <span className="text-xs font-bold text-slate-400 bg-slate-100 px-3 py-1 rounded-full">Total: {totalRoomsConfig} kamar</span>
+        </div>
+
+        <div className="space-y-3 mb-4">
+          {Object.entries(floorCfg).sort(([a],[b])=>+a-+b).map(([lt, cfg]) => {
+            const occupied = rooms.filter(r=>r.lantai===+lt&&r.status==="terisi").length;
+            const current  = rooms.filter(r=>r.lantai===+lt).length;
+            return (
+              <div key={lt} className="bg-slate-50 rounded-xl p-4">
+                <div className="flex items-center gap-3 mb-3">
+                  <span className="text-sm font-black text-slate-700 w-20">Lantai {lt}</span>
+                  <span className="text-xs text-slate-400">{current} kamar saat ini · {occupied} terisi</span>
+                  <button onClick={()=>removeFloor(lt)} className="ml-auto text-xs text-red-400 hover:text-red-600 font-bold transition">Hapus Lantai</button>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 block mb-1">Prefix Kode Kamar</label>
+                    <div className="flex items-center gap-2">
+                      <input className={inp+" flex-1"} placeholder="cth: 1-, A-, B0"
+                        value={cfg.prefix||""}
+                        onChange={e=>setFloorCfg({...floorCfg,[lt]:{...cfg,prefix:e.target.value}})}/>
+                      <span className="text-xs text-slate-400 whitespace-nowrap">+ 01, 02...</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-1">Preview: <span className="font-bold text-slate-600">{cfg.prefix||lt+"-"}01</span>, <span className="font-bold text-slate-600">{cfg.prefix||lt+"-"}02</span></p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 block mb-1">Jumlah Kamar</label>
+                    <input type="number" min={occupied} className={inp}
+                      value={cfg.count}
+                      onChange={e=>setFloorCfg({...floorCfg,[lt]:{...cfg,count:e.target.value}})}/>
+                    {+cfg.count < current && <p className="text-[11px] text-amber-600 mt-1">↓ {current - +cfg.count} kamar akan dihapus (hanya kosong)</p>}
+                    {+cfg.count > current && <p className="text-[11px] text-emerald-600 mt-1">↑ {+cfg.count - current} kamar baru akan ditambah</p>}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Tambah lantai */}
         <div className="flex gap-2 mb-4">
-          <Btn onClick={checkDatabase} disabled={dbChecking} variant="ghost">
-            {dbChecking ? '⏳ Mengecek...' : '🔍 Cek Sekarang'}
+          <input type="number" className={inp+" w-32"} placeholder="No. lantai" value={newLantai}
+            onChange={e=>setNewLantai(e.target.value)} min={1}/>
+          <Btn v="secondary" onClick={addFloor}><Plus size={14}/>Tambah Lantai</Btn>
+        </div>
+
+        <Btn v="primary" onClick={applyFloorConfig}>
+          <Check size={16}/>Terapkan Konfigurasi Lantai
+        </Btn>
+        <p className="text-xs text-slate-400 mt-2">⚠ Kode kamar yang sudah diedit manual tidak akan berubah. Prefix hanya berlaku untuk kamar baru.</p>
+      </Card>
+
+      <Card className="p-6">
+        <div className="flex items-center gap-2 mb-5">
+          <Shield size={20} className="text-blue-600"/>
+          <h2 className="font-black text-slate-900">% Kepemilikan Investor</h2>
+        </div>
+        <div className="space-y-4">
+          {[{l:"Ricy Candra",k:"ricy"},{l:"Arief Wahyudi",k:"arief"},{l:"Ferry Lukas",k:"ferry"}].map(inv=>(
+            <div key={inv.k} className="flex items-center gap-4">
+              <span className="text-sm font-bold text-slate-700 w-36">{inv.l}</span>
+              <input type="number" step="0.001" min="0" max="100" className={inp+" w-32"}
+                value={form.kepemilikan?.[inv.k]||""} onChange={e=>setForm({...form,kepemilikan:{...form.kepemilikan,[inv.k]:e.target.value}})}/>
+              <span className="text-slate-500 font-bold">%</span>
+            </div>
+          ))}
+          <div className={`text-sm font-black pt-2 border-t ${valid?"text-emerald-600":"text-red-500"}`}>
+            Total: {total.toFixed(3)}% {valid?"✓ Valid":"✗ Harus tepat 100%"}
+          </div>
+        </div>
+      </Card>
+
+      <Card className="p-6">
+        <h2 className="font-black text-slate-900 mb-5">Parameter Keuangan</h2>
+        <div className="space-y-4">
+          <div><label className="text-xs font-bold text-slate-600 block mb-1">Kas Operasional Bulanan (Rp)</label>
+            <input type="number" className={inp} value={form.kasOperasional||0} onChange={e=>setForm({...form,kasOperasional:+e.target.value})}/></div>
+          <div><label className="text-xs font-bold text-slate-600 block mb-1">Fee Pengelola (%)</label>
+            <input type="number" min="0" max="100" step="0.1" className={inp} value={form.feeManager||0} onChange={e=>setForm({...form,feeManager:+e.target.value})}/></div>
+        </div>
+      </Card>
+
+      {/* Company info */}
+      <Card className="p-6">
+        <div className="flex items-center gap-2 mb-5">
+          <Building size={20} className="text-blue-600"/>
+          <h2 className="font-black text-slate-900">Info Perusahaan (Kop Invoice)</h2>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          {[{l:"Nama Perusahaan/Kos",k:"name",f:true},{l:"Alamat",k:"address",f:true},{l:"No Telepon",k:"phone"},{l:"Email",k:"email"}].map(f=>(
+            <div key={f.k} className={f.f?"col-span-2":""}>
+              <label className="text-xs font-bold text-slate-600 block mb-1">{f.l}</label>
+              <input className={inp} value={form.companyInfo?.[f.k]||""}
+                onChange={e=>setForm({...form,companyInfo:{...(form.companyInfo||{}), [f.k]:e.target.value}})}/>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* Bank accounts */}
+      <Card className="p-6">
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="font-black text-slate-900">Rekening Perusahaan</h2>
+          <Btn v="secondary" size="sm" onClick={()=>setForm({...form, bankAccounts:[...(form.bankAccounts||[]),{id:uid(),bank:"",noRek:"",atasNama:""}]})}>
+            <Plus size={14}/>Tambah Rekening
           </Btn>
         </div>
-        {dbStatus && (
-          <div className="space-y-2">
-            {dbStatus.map(r=>(
-              <div key={r.path} className={`flex items-start justify-between rounded-lg px-3 py-2.5 text-sm ${
-                r.status==='error'?'bg-red-50 border border-red-200':
-                r.count===0?'bg-yellow-50 border border-yellow-200':
-                'bg-green-50 border border-green-200'
-              }`}>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono font-bold text-gray-700">{r.path}</span>
-                    <Badge color={r.status==='error'?'red':r.count===0?'yellow':'green'}>
-                      {r.status==='error'?'ERROR':r.count===0?'KOSONG':`${r.count} records`}
-                    </Badge>
-                  </div>
-                  {r.sample && <p className="text-xs text-gray-500 mt-0.5 font-mono truncate max-w-sm">{r.sample}</p>}
-                </div>
-              </div>
-            ))}
-            {/* Summary */}
-            <div className="pt-2 border-t text-sm text-gray-600">
-              {dbStatus.every(r=>r.status==='error') ? (
-                <p className="text-red-600 font-medium">❌ Semua path error — kemungkinan Firebase Rules memblokir akses. Cek di Firebase Console → Realtime Database → Rules.</p>
-              ) : dbStatus.filter(r=>r.count===0 && r.status!=='error').length > 3 ? (
-                <p className="text-yellow-700">⚠️ Banyak tabel kosong — klik "Restore Data Awal" di bawah untuk mengisi data contoh.</p>
-              ) : (
-                <p className="text-green-700">✅ Database dapat diakses. Kalau data tidak muncul, cek filter bulan di halaman masing-masing.</p>
-              )}
-            </div>
-          </div>
+        {(!form.bankAccounts||form.bankAccounts.length===0)&&(
+          <p className="text-sm text-slate-400 text-center py-4">Belum ada rekening. Klik tombol di atas untuk menambah.</p>
         )}
-      </div>
-
-      {/* ── DATABASE CLEANUP ── */}
-      <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-        <h3 className="font-semibold text-red-800 mb-1">🧹 Bersihkan Database (Hapus Junk Records)</h3>
-        <p className="text-xs text-red-700 mb-3">
-          Hapus ribuan record kosong/invalid (kamar tanpa nomor, penyewa tanpa nama, dll). 
-          Data valid tetap aman. Jalankan ini <strong>sekali</strong> untuk fix masalah 4759 kamar.
-        </p>
-        <Btn onClick={cleanDatabase} disabled={cleanBusy} variant="danger">
-          {cleanBusy ? '⏳ Membersihkan... (mungkin 1-2 menit)' : '🧹 Bersihkan Sekarang'}
-        </Btn>
-        {cleanResult && (
-          <div className="mt-3 bg-white border rounded-lg p-3">
-            <pre className="text-xs text-gray-700 whitespace-pre-wrap font-mono">{cleanResult}</pre>
-          </div>
-        )}
-      </div>
-
-      {/* ── DATA MIGRATION ── */}
-      <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
-        <h3 className="font-semibold text-orange-800 mb-1">🔄 Migrasi Data (App Lama → App Baru)</h3>
-        <p className="text-xs text-orange-700 mb-3">
-          Data lama pakai field bahasa Indonesia (<code className="bg-orange-100 px-1 rounded">nama, hp, nomor, lantai, nominal...</code>).
-          Migrasi akan tulis ulang ke format baru sekali saja — data tidak hilang.
-        </p>
-        <Btn onClick={migrateData} disabled={migrateBusy} variant="warning">
-          {migrateBusy ? '⏳ Migrasi berjalan...' : '🔄 Jalankan Migrasi Sekarang'}
-        </Btn>
-        {migrateResult && (
-          <div className="mt-3 bg-white border rounded-lg p-3">
-            <pre className="text-xs text-gray-700 whitespace-pre-wrap font-mono">{migrateResult}</pre>
-          </div>
-        )}
-      </div>
-
-      {/* ── DATA SEEDER ── */}
-      <div className="bg-white rounded-xl border p-4">
-        <h3 className="font-semibold text-gray-800 mb-1">🌱 Restore / Seed Data Awal</h3>
-        <p className="text-xs text-gray-500 mb-3">Menambahkan data contoh (42 kamar, penyewa Anto, pembayaran, pengeluaran). Tidak menghapus data yang sudah ada.</p>
-        <Btn onClick={seedData} disabled={seedBusy} variant="warning">
-          {seedBusy ? '⏳ Memproses...' : '🌱 Restore Data Awal'}
-        </Btn>
-        {seedResult && (
-          <div className="mt-3 bg-gray-50 border rounded-lg p-3">
-            <pre className="text-xs text-gray-700 whitespace-pre-wrap font-mono">{seedResult}</pre>
-          </div>
-        )}
-      </div>
-
-      {/* User Management */}
-      <div className="bg-white rounded-xl border p-4">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-gray-800">Kelola Pengguna (Firebase)</h3>
-          <Btn size="sm" onClick={openAddUser}>+ Tambah</Btn>
-        </div>
-        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
-          <p className="font-medium mb-1">👥 User Default (hardcoded):</p>
-          <p>admin/1234 · ricy/1111 · arief/2222 · ferry/3333 · staff/0000</p>
-        </div>
-        {users.length > 0 && (
-          <table className="w-full text-sm">
-            <thead className="border-b text-gray-600">
-              <tr><th className="text-left py-2">ID</th><th className="text-left py-2">Nama</th><th className="text-left py-2">Role</th><th className="py-2"></th></tr>
-            </thead>
-            <tbody>
-              {users.map(u=>(
-                <tr key={u.id} className="border-b border-gray-50">
-                  <td className="py-2 font-mono">{u.id}</td>
-                  <td className="py-2">{u.name}</td>
-                  <td className="py-2"><Badge color={u.role==='Admin'?'blue':u.role==='Investor'?'purple':'gray'}>{u.role}</Badge></td>
-                  <td className="py-2 text-right">
-                    <Btn size="sm" variant="danger" onClick={()=>deleteUser(u)}>Hapus</Btn>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      <Modal open={modal==='addUser'} title="Tambah User" onClose={()=>setModal(null)}>
         <div className="space-y-3">
-          <Input label="User ID" value={form.userId||''} onChange={e=>setForm(f=>({...f,userId:e.target.value}))} placeholder="mis: budi" />
-          <Input label="Nama" value={form.name||''} onChange={e=>setForm(f=>({...f,name:e.target.value}))} />
-          <Select label="Role" value={form.role||'Staff'} onChange={e=>setForm(f=>({...f,role:e.target.value}))}>
-            <option value="Admin">Admin</option>
-            <option value="Investor">Investor</option>
-            <option value="Staff">Staff</option>
-          </Select>
-          <Input label="Password" type="password" value={form.pw||''} onChange={e=>setForm(f=>({...f,pw:e.target.value}))} />
-          <div className="flex gap-2 pt-2">
-            <Btn onClick={saveUser} disabled={busy}>{busy?'Menyimpan...':'Simpan'}</Btn>
-            <Btn onClick={()=>setModal(null)} variant="ghost">Batal</Btn>
-          </div>
+          {(form.bankAccounts||[]).map((b,i)=>(
+            <div key={b.id||i} className="grid grid-cols-7 gap-2 items-end bg-slate-50 rounded-xl p-3">
+              <div className="col-span-2">
+                <label className="text-xs font-bold text-slate-500 block mb-1">Bank</label>
+                <input className={inp} placeholder="BCA, BRI..." value={b.bank||""}
+                  onChange={e=>{const nb=[...(form.bankAccounts)]; nb[i]={...b,bank:e.target.value}; setForm({...form,bankAccounts:nb});}}/>
+              </div>
+              <div className="col-span-2">
+                <label className="text-xs font-bold text-slate-500 block mb-1">No Rekening</label>
+                <input className={inp} placeholder="1234567890" value={b.noRek||""}
+                  onChange={e=>{const nb=[...(form.bankAccounts)]; nb[i]={...b,noRek:e.target.value}; setForm({...form,bankAccounts:nb});}}/>
+              </div>
+              <div className="col-span-2">
+                <label className="text-xs font-bold text-slate-500 block mb-1">Atas Nama</label>
+                <input className={inp} placeholder="Nama pemilik rek" value={b.atasNama||""}
+                  onChange={e=>{const nb=[...(form.bankAccounts)]; nb[i]={...b,atasNama:e.target.value}; setForm({...form,bankAccounts:nb});}}/>
+              </div>
+              <div>
+                <button onClick={()=>{ const nb=(form.bankAccounts).filter((_,j)=>j!==i); setForm({...form,bankAccounts:nb}); }}
+                  className="w-full p-2.5 bg-red-50 hover:bg-red-100 text-red-500 rounded-xl transition flex items-center justify-center">
+                  <Trash2 size={14}/>
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
-      </Modal>
+      </Card>
+
+      <Card className="p-6">
+        <h2 className="font-black text-slate-900 mb-5">PIN Akses</h2>
+        <div className="grid grid-cols-2 gap-4">
+          {[{l:"Admin (Ricy)",k:"admin"},{l:"Investor Ricy",k:"ricy"},{l:"Investor Arief",k:"arief"},{l:"Investor Ferry",k:"ferry"},{l:"Staff",k:"staff"}].map(p=>(
+            <div key={p.k}><label className="text-xs font-bold text-slate-600 block mb-1">{p.l}</label>
+              <input className={inp} value={pins[p.k]||""} onChange={e=>setPins({...pins,[p.k]:e.target.value})} placeholder="PIN baru"/></div>
+          ))}
+        </div>
+      </Card>
+
+      <div className="flex items-center gap-4">
+        <Btn onClick={doSave} size="lg">Simpan Semua Perubahan</Btn>
+        {saved&&<span className="text-emerald-600 font-black">✓ Tersimpan!</span>}
+      </div>
+
+      {/* RESET DATA */}
+      <Card className="p-6 border-2 border-red-100">
+        <div className="flex items-center gap-2 mb-4">
+          <AlertTriangle size={18} className="text-red-500"/>
+          <h2 className="font-black text-slate-900">Reset Data</h2>
+        </div>
+        <p className="text-sm text-slate-500 mb-4">Hapus semua data penyewa, pembayaran, kas, invoice, dan bersihkan status kamar. Web kembali seperti baru. <strong>Tidak bisa dibatalkan.</strong></p>
+        <button onClick={()=>resetAll("penyewa")}
+          className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-xl transition">
+          🗑️ Reset Semua Data
+        </button>
+      </Card>
+
+      {/* RESET DATA LAMA */}
+      <Card className="p-6 border-2 border-red-100">
+        <div className="flex items-center gap-2 mb-2">
+          <Trash2 size={20} className="text-red-500"/>
+          <h2 className="font-black text-red-700">Reset / Hapus Data Test</h2>
+        </div>
+        <p className="text-slate-500 text-sm mb-5">Hapus data uji coba. Pengaturan, % kepemilikan, dan PIN <strong>tidak</strong> ikut terhapus.</p>
+        <div className="grid grid-cols-2 gap-3">
+          {[
+            {label:"Hapus Semua Pembayaran",  key:"payments",  desc:"Bersihkan semua data sewa masuk"},
+            {label:"Hapus Semua Pengeluaran", key:"expenses",  desc:"Bersihkan semua data kas keluar"},
+            {label:"Hapus Semua Penyewa",     key:"tenants",   desc:"Kosongkan semua kamar sekaligus"},
+            {label:"Hapus Log Aktivitas",     key:"audit",     desc:"Bersihkan riwayat audit trail"},
+          ].map(opt=>(
+            <div key={opt.key} className="bg-red-50 rounded-xl p-4">
+              <p className="text-sm font-bold text-slate-800">{opt.label}</p>
+              <p className="text-xs text-slate-400 mt-0.5 mb-3">{opt.desc}</p>
+              <button onClick={()=>{
+                if(!confirm(`Yakin hapus ${opt.label.toLowerCase()}? Tidak bisa dibatalkan.`)) return;
+                onReset(opt.key);
+              }} className="px-3 py-1.5 text-xs font-bold bg-red-100 hover:bg-red-200 text-red-700 rounded-lg transition">
+                Hapus →
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="mt-4 pt-4 border-t border-red-100">
+          <p className="text-xs text-red-400 font-bold mb-2">⚠ Zona Berbahaya</p>
+          <button onClick={()=>{
+            if(!confirm("HAPUS SEMUA data?\n\nIni akan menghapus: penyewa, pembayaran, pengeluaran, dan log.\nKamar kembali ke 42 default kosong.\nPIN & setting AMAN.\n\nLanjutkan?")) return;
+            if(!confirm("Konfirmasi terakhir: yakin hapus semua data?")) return;
+            onReset("all");
+          }} className="px-4 py-2 text-sm font-black bg-red-600 hover:bg-red-700 text-white rounded-xl transition">
+            🗑 Reset SEMUA Data (kecuali setting & PIN)
+          </button>
+        </div>
+      </Card>
     </div>
-  )
+  );
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// LOG AKTIVITAS
-// ══════════════════════════════════════════════════════════════════════════════
-function LogAktivitas() {
-  const [logs, setLogs]   = useState([])
-  const [loading, setLoading] = useState(true)
+// ═══════════════════════════════════════════════
+// AUDIT PAGE
+// ═══════════════════════════════════════════════
+function AuditPage({ audit }) {
+  const color = (a) => {
+    if (a.includes("BAYAR")||a.includes("MASUK")) return "bg-emerald-100 text-emerald-700";
+    if (a.includes("HAPUS")||a.includes("KELUAR")||a.includes("TOLAK")) return "bg-red-100 text-red-700";
+    if (a.includes("APPROVE")) return "bg-blue-100 text-blue-700";
+    if (a.includes("PENGELUARAN")||a.includes("PENDING")) return "bg-amber-100 text-amber-700";
+    return "bg-slate-100 text-slate-600";
+  };
+  return (
+    <div className="space-y-5">
+      <div><h1 className="text-2xl font-black text-slate-900">Log Aktivitas</h1>
+        <p className="text-slate-400 text-sm">{audit.length} entri · tidak bisa dihapus</p></div>
+      <Card>
+        {audit.length===0&&<p className="text-center py-10 text-slate-400 text-sm">Belum ada aktivitas tercatat</p>}
+        <div className="divide-y divide-slate-50">
+          {audit.map(a=>(
+            <div key={a.id} className="flex items-start gap-3 px-5 py-3.5">
+              <span className={`text-xs font-bold px-2.5 py-1 rounded-full flex-shrink-0 mt-0.5 ${color(a.action)}`}>{a.action}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-slate-800 font-medium">{a.detail}</p>
+                <p className="text-xs text-slate-400 mt-0.5">{a.by} · {fD(a.at)} {new Date(a.at).toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit"})}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
+}
 
-  const load = async () => {
-    setLoading(true)
-    const data = await fbGet('km_logs')
-    setLogs(toObj(data).sort((a,b)=>b.ts?.localeCompare(a.ts)||0))
-    setLoading(false)
-  }
-  useEffect(()=>{ load() },[])
-
-  if (loading) return <div className="flex items-center justify-center h-40 text-gray-500">Memuat...</div>
+// ═══════════════════════════════════════════════
+// INVOICE PUBLIC VIEW (no auth required)
+// ═══════════════════════════════════════════════
+function InvoicePublicView({ inv }) {
+  if (!inv) return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-100">
+      <div className="text-center p-8">
+        <p className="text-5xl mb-4">🔍</p>
+        <p className="text-xl font-black text-slate-500">Invoice tidak ditemukan</p>
+        <p className="text-slate-400 mt-2 text-sm">Link mungkin salah atau sudah dihapus</p>
+      </div>
+    </div>
+  );
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-600">{logs.length} aktivitas tercatat</p>
-        <Btn size="sm" variant="ghost" onClick={load}>↻ Refresh</Btn>
+    <div className="min-h-screen bg-gradient-to-br from-slate-100 to-blue-50 py-8 px-4 print:bg-white print:py-0">
+      <div className="max-w-2xl mx-auto">
+        <div className="flex justify-between items-center mb-5 print:hidden">
+          <p className="text-sm text-slate-500 font-medium">🏠 Kos Meruya · Invoice</p>
+          <button onClick={()=>window.print()}
+            className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-200">
+            🖨 Print / Simpan PDF
+          </button>
+        </div>
+
+        <div className="bg-white rounded-3xl shadow-xl overflow-hidden print:shadow-none print:rounded-none">
+          {/* Header strip */}
+          <div className="bg-gradient-to-r from-blue-700 to-indigo-700 px-8 py-7 text-white">
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-2xl font-black tracking-tight">{inv.companyInfo?.name||"Kos Meruya"}</p>
+                {inv.companyInfo?.address&&<p className="text-blue-200 text-sm mt-1">{inv.companyInfo.address}</p>}
+                {inv.companyInfo?.phone&&<p className="text-blue-200 text-sm">{inv.companyInfo.phone}</p>}
+              </div>
+              <div className="text-right">
+                <p className="text-blue-300 text-xs font-bold uppercase tracking-widest">Invoice</p>
+                <p className="text-xl font-black mt-1">{inv.invoiceNo}</p>
+                <p className="text-blue-200 text-sm mt-1">Tgl: {fD(inv.generatedAt)}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="px-8 py-7">
+            {/* Billing to + due date */}
+            <div className="flex justify-between mb-8 gap-4">
+              <div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Tagihan Kepada</p>
+                <p className="font-black text-slate-900 text-xl">{inv.tenantName}</p>
+                <p className="text-slate-500 mt-0.5">{inv.tenantHp}</p>
+                <p className="text-slate-500">Kamar <span className="font-bold text-blue-600">{inv.roomNomor}</span> · {inv.roomTipe}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Jatuh Tempo</p>
+                <p className="font-black text-slate-900">{fD(inv.dueDate)}</p>
+                <span className={`inline-block text-xs font-black px-3 py-1.5 rounded-full mt-2 ${inv.paid?"bg-emerald-100 text-emerald-700":"bg-red-100 text-red-600"}`}>
+                  {inv.paid?"✓ LUNAS":"BELUM LUNAS"}
+                </span>
+              </div>
+            </div>
+
+            {/* Line items */}
+            <div className="border-t-2 border-b-2 border-slate-100 py-4 mb-6">
+              <div className="flex justify-between items-start py-3">
+                <div>
+                  <p className="font-bold text-slate-800">Sewa Kamar {inv.roomNomor} – {inv.roomTipe}</p>
+                  <p className="text-slate-400 text-sm mt-0.5">Periode: {inv.periode?.label}</p>
+                </div>
+                <p className="font-black text-slate-800 text-lg">{fRp(inv.nominal)}</p>
+              </div>
+            </div>
+
+            {/* Total */}
+            <div className="flex justify-between items-center mb-8 bg-blue-50 rounded-2xl px-6 py-4">
+              <p className="font-black text-slate-700 text-lg">TOTAL TAGIHAN</p>
+              <p className="font-black text-blue-700 text-3xl">{fRp(inv.nominal)}</p>
+            </div>
+
+            {/* Bank accounts */}
+            {inv.bankAccounts?.length>0&&(
+              <div className="bg-slate-50 rounded-2xl p-5 mb-6">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Transfer Pembayaran Ke:</p>
+                <div className="space-y-2.5">
+                  {inv.bankAccounts.map((b,i)=>(
+                    <div key={i} className="flex items-center gap-3 bg-white rounded-xl px-4 py-3 border border-slate-100">
+                      <span className="text-sm font-black text-blue-700 w-14">{b.bank}</span>
+                      <span className="text-base font-black text-slate-800 tracking-widest">{b.noRek}</span>
+                      <span className="text-sm text-slate-400">a.n. {b.atasNama}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-slate-400 mt-3">Konfirmasi transfer via WhatsApp ke pengelola kos.</p>
+              </div>
+            )}
+
+            {/* Footer */}
+            <div className="border-t border-slate-100 pt-4 text-center">
+              <p className="text-xs text-slate-300">Invoice #{inv.invoiceNo} · Dibuat {inv.generatedAt?new Date(inv.generatedAt).toLocaleString("id-ID"):""}</p>
+              <p className="text-xs text-slate-300">Sistem Manajemen Kos Meruya</p>
+            </div>
+          </div>
+        </div>
       </div>
-      <div className="bg-white rounded-xl border overflow-hidden">
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════
+// INVOICES PAGE
+// ═══════════════════════════════════════════════
+function InvoicesPage({ role, user, rooms, tenants, settings, addAudit, audit }) {
+  const [invoices, setInvs]  = useState([]);
+  const [modal,    setModal] = useState(null);
+  const [form,     setForm]  = useState({});
+  const [copied,   setCopied]= useState("");
+  const [loadingInv, setLI]  = useState(true);
+  const [showWA,   setShowWA]= useState(null);
+  const [previewInv,setPreviewInv]=useState(null); // fullscreen invoice preview
+
+  const isEdit = role==="admin"||role==="staff";
+
+  useEffect(()=>{
+    store.get("km-invoices").then(d=>{ setInvs(d||[]); setLI(false); });
+  },[]);
+
+  const saveInvs = async (data) => {
+    setInvs(data);
+    await store.set("km-invoices", data, true);
+  };
+
+  const calcPeriode = (jatuhTempo, targetMonth) => {
+    const [y,m] = (targetMonth||tMon()).split("-").map(Number);
+    const jt = +jatuhTempo||1;
+    const start = new Date(y, m-1, jt);
+    // end = jt-1 of next month (or last day if jt=1)
+    const endDate = jt>1 ? new Date(y, m, jt-1) : new Date(y, m, 0);
+    const fmt = (d) => d.toLocaleDateString("id-ID",{day:"numeric",month:"long",year:"numeric"});
+    return {
+      start: start.toISOString().split("T")[0],
+      end:   endDate.toISOString().split("T")[0],
+      label: `${fmt(start)} – ${fmt(endDate)}`
+    };
+  };
+
+  const genWAMsg = (inv) => {
+    const banks = (inv.bankAccounts||[]).map(b=>`🏦 ${b.bank}  ${b.noRek}  a.n. ${b.atasNama}`).join("\n");
+    return `Halo Kak ${inv.tenantName} 👋
+
+Berikut tagihan sewa kamar Anda di *${inv.companyInfo?.name||"Kos Meruya"}*:
+
+🏠 Kamar       : ${inv.roomNomor} (${inv.roomTipe})
+📋 No. Invoice : ${inv.invoiceNo}
+📆 Periode     : ${inv.periode?.label||"-"}
+💰 Total       : *${fRp(inv.nominal)}*
+⏰ Jatuh Tempo : ${fD(inv.dueDate)}
+
+📎 Terlampir invoice PDF di atas.
+
+${banks?"Transfer pembayaran ke:\n"+banks+"\n":""}
+Mohon konfirmasi via WhatsApp setelah transfer.
+Terima kasih 🙏
+
+_Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
+  };
+
+  const printInvoice = (inv) => setPreviewInv(inv);
+
+  const clipCopy = async (text) => {
+    try { await navigator.clipboard.writeText(text); return true; } catch {}
+    try {
+      const el = document.createElement("textarea");
+      el.value = text; el.style.cssText = "position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;";
+      document.body.appendChild(el); el.focus(); el.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(el); return ok;
+    } catch { return false; }
+  };
+
+  const openGenerate = (t) => {
+    const room = rooms.find(r=>r.id===t.kamarId);
+    const tm   = tMon();
+    const per  = calcPeriode(t.jatuhTempo, tm);
+    setForm({ tenantId:t.id, tenantName:t.nama, tenantHp:t.hp,
+      roomNomor:room?.nomor, roomTipe:room?.tipe||"Standard",
+      nominal:room?.harga||0, targetMonth:tm, periode:per, dueDate:per.start });
+    setModal(t);
+  };
+
+  const updateMonth = (tm) => {
+    const per = calcPeriode(modal.jatuhTempo, tm);
+    setForm(f=>({...f, targetMonth:tm, periode:per, dueDate:per.start}));
+  };
+
+  const nextInvNo = (tm) => {
+    const key = tm.replace("-","");
+    const cnt = invoices.filter(i=>i.invoiceNo?.includes(key)).length;
+    return `INV-${key}-${String(cnt+1).padStart(3,"0")}`;
+  };
+
+  const generate = async () => {
+    if (!form.nominal) return alert("Nominal 0. Set harga kamar terlebih dahulu.");
+    const inv = {
+      id: uid(), invoiceNo: nextInvNo(form.targetMonth), ...form,
+      bankAccounts: settings.bankAccounts||[],
+      companyInfo:  settings.companyInfo||{name:"Kos Meruya"},
+      generatedBy: user, generatedAt: now(), paid: false,
+    };
+    await store.set(`km-inv-${inv.id}`, inv, true);
+    const newInvs = [inv,...invoices];
+    await saveInvs(newInvs);
+    await addAudit("INVOICE",`${inv.invoiceNo} dibuat untuk ${inv.tenantName} (K-${inv.roomNomor}) – ${inv.periode?.label}`);
+    setModal(null);
+    setShowWA({ inv, msg: genWAMsg(inv) });
+  };
+
+  const markPaid = async (inv) => {
+    const updated = invoices.map(i=>i.id===inv.id?{...i,paid:true,paidAt:now(),paidBy:user}:i);
+    await saveInvs(updated);
+    await store.set(`km-inv-${inv.id}`, {...inv,paid:true,paidAt:now(),paidBy:user}, true);
+    await addAudit("INV_LUNAS",`${inv.invoiceNo} – ${inv.tenantName} ditandai LUNAS oleh ${user}`);
+  };
+
+  const showShare = (inv) => setShowWA({ inv, msg: genWAMsg(inv) });
+
+  const activeTenants = tenants.filter(t=>t.aktif);
+  const ms = months6();
+  const noBank = !settings.bankAccounts?.length;
+
+  return (
+    <div className="space-y-6">
+
+      {/* ── INVOICE PREVIEW MODAL ── */}
+      {previewInv&&(
+        <Modal title={previewInv.invoiceNo} onClose={()=>setPreviewInv(null)} size="lg">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-blue-700 to-indigo-700 rounded-xl p-5 text-white flex justify-between items-start mb-5">
+            <div>
+              <p className="text-lg font-black">{previewInv.companyInfo?.name||"Kos Meruya"}</p>
+              {previewInv.companyInfo?.address&&<p className="text-blue-200 text-xs mt-1">{previewInv.companyInfo.address}</p>}
+              {previewInv.companyInfo?.phone&&<p className="text-blue-200 text-xs">{previewInv.companyInfo.phone}</p>}
+            </div>
+            <div className="text-right">
+              <p className="text-blue-300 text-[10px] font-bold uppercase tracking-widest">Invoice</p>
+              <p className="font-black text-lg mt-1">{previewInv.invoiceNo}</p>
+              <p className="text-blue-200 text-xs">{fD(previewInv.generatedAt)}</p>
+            </div>
+          </div>
+
+          {/* Billing info */}
+          <div className="flex justify-between gap-4 mb-5">
+            <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Tagihan Kepada</p>
+              <p className="font-black text-slate-900 text-base">{previewInv.tenantName}</p>
+              <p className="text-slate-500 text-sm">{previewInv.tenantHp}</p>
+              <p className="text-slate-500 text-sm">Kamar <span className="font-black text-blue-600">{previewInv.roomNomor}</span> · {previewInv.roomTipe}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Jatuh Tempo</p>
+              <p className="font-black text-slate-900">{fD(previewInv.dueDate)}</p>
+              <span className={`inline-block text-xs font-black px-3 py-1 rounded-full mt-1 ${previewInv.paid?"bg-emerald-100 text-emerald-700":"bg-red-100 text-red-600"}`}>
+                {previewInv.paid?"✓ LUNAS":"BELUM LUNAS"}
+              </span>
+            </div>
+          </div>
+
+          {/* Item */}
+          <div className="border-t-2 border-b-2 border-slate-100 py-4 mb-4">
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="font-bold text-slate-800">Sewa Kamar {previewInv.roomNomor} – {previewInv.roomTipe}</p>
+                <p className="text-slate-400 text-sm mt-0.5">Periode: {previewInv.periode?.label}</p>
+              </div>
+              <p className="font-black text-slate-800">{fRp(previewInv.nominal)}</p>
+            </div>
+          </div>
+
+          {/* Total */}
+          <div className="flex justify-between items-center bg-blue-50 rounded-xl px-5 py-4 mb-4">
+            <p className="font-black text-slate-800">TOTAL TAGIHAN</p>
+            <p className="font-black text-blue-700 text-2xl">{fRp(previewInv.nominal)}</p>
+          </div>
+
+          {/* Bank */}
+          {previewInv.bankAccounts?.length>0&&(
+            <div className="bg-slate-50 rounded-xl p-4 mb-4">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Transfer Pembayaran Ke</p>
+              {previewInv.bankAccounts.map((b,i)=>(
+                <div key={i} className="flex items-center gap-3 bg-white rounded-lg px-4 py-2.5 border border-slate-100 mb-2">
+                  <span className="font-black text-blue-700 w-12 text-sm">{b.bank}</span>
+                  <span className="font-black text-slate-800 tracking-wider text-sm">{b.noRek}</span>
+                  <span className="text-slate-400 text-sm">a.n. {b.atasNama}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <p className="text-xs text-slate-300 text-center mb-4">Dibuat oleh {previewInv.generatedBy} · {fD(previewInv.generatedAt)}</p>
+
+          {/* Screenshot tip */}
+          <div className="bg-amber-50 rounded-xl p-3 text-center">
+            <p className="text-sm font-bold text-amber-700">📸 Screenshot halaman ini untuk simpan & kirim ke penyewa via WA</p>
+          </div>
+        </Modal>
+      )}
+
+      <div>
+        <h1 className="text-2xl font-black text-slate-900">Invoice Tagihan</h1>
+        <p className="text-slate-400 text-sm">{invoices.length} invoice · {invoices.filter(i=>i.paid).length} lunas</p>
+      </div>
+
+      {noBank&&isEdit&&(
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center gap-3">
+          <AlertTriangle size={18} className="text-amber-500 flex-shrink-0"/>
+          <p className="text-sm text-amber-700 font-medium">Belum ada rekening perusahaan. Tambahkan di <span className="font-black">Pengaturan → Rekening Perusahaan</span> agar muncul di invoice.</p>
+        </div>
+      )}
+
+      {/* Quick generate table */}
+      {isEdit&&(
+        <Card className="p-5">
+          <h2 className="font-black text-slate-900 mb-4">Generate Invoice per Penyewa</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="border-b border-slate-100">
+                {["Kamar","Nama","No HP","JT","Harga/Bln",""].map(h=>(
+                  <th key={h} className="text-left px-4 py-3 text-xs font-bold text-slate-400 uppercase tracking-widest">{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {activeTenants.length===0&&<tr><td colSpan={6} className="text-center py-8 text-slate-400 text-sm">Belum ada penyewa aktif</td></tr>}
+                {activeTenants.map(t=>{
+                  const room=rooms.find(r=>r.id===t.kamarId);
+                  const lastInv=invoices.find(i=>i.tenantId===t.id);
+                  return (
+                    <tr key={t.id} className="border-b border-slate-50 hover:bg-slate-50 transition">
+                      <td className="px-4 py-3 font-black text-blue-600">K-{room?.nomor||"—"}</td>
+                      <td className="px-4 py-3 font-bold text-slate-800">{t.nama}</td>
+                      <td className="px-4 py-3 text-slate-500">{t.hp||"—"}</td>
+                      <td className="px-4 py-3 text-slate-500">Tgl {t.jatuhTempo}</td>
+                      <td className="px-4 py-3 font-bold text-emerald-600">{fRp(room?.harga)}</td>
+                      <td className="px-4 py-3">
+                        <button onClick={()=>openGenerate(t)}
+                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5">
+                          <FileText size={12}/>Buat Invoice
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {/* Invoice list */}
+      <Card>
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <h2 className="font-black text-slate-900">Riwayat Invoice</h2>
+          <span className="text-xs text-slate-400 bg-slate-100 px-3 py-1 rounded-full font-bold">{invoices.length} invoice</span>
+        </div>
+        {loadingInv&&<p className="text-center py-10 text-slate-400 text-sm">Memuat...</p>}
+        {!loadingInv&&invoices.length===0&&<p className="text-center py-10 text-slate-400 text-sm">Belum ada invoice dibuat</p>}
+        <div className="divide-y divide-slate-50">
+          {invoices.map(inv=>(
+            <div key={inv.id} className="px-6 py-4 hover:bg-slate-50/80 transition">
+              <div className="flex items-start justify-between gap-4 flex-wrap">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-black text-slate-800">{inv.invoiceNo}</span>
+                    <Badge status={inv.paid?"lunas":"belum"}/>
+                  </div>
+                  <p className="font-bold text-slate-700 mt-1 text-sm">{inv.tenantName} · Kamar {inv.roomNomor}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">{inv.periode?.label}</p>
+                  <p className="text-xs text-slate-400">JT: {fD(inv.dueDate)} · Dibuat {fD(inv.generatedAt)} oleh {inv.generatedBy}</p>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
+                  <span className="font-black text-slate-800">{fRp(inv.nominal)}</span>
+                  {!inv.paid&&isEdit&&(
+                    <button onClick={()=>markPaid(inv)} className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold rounded-xl transition">✓ Lunas</button>
+                  )}
+                  <button onClick={()=>printInvoice(inv)}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5">
+                    🖨 PDF
+                  </button>
+                  <button onClick={()=>showShare(inv)}
+                    className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5">
+                    💬 WA
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* WA Share Modal */}
+      {showWA&&(
+        <Modal title={`Kirim ke ${showWA.inv.tenantName}`} onClose={()=>setShowWA(null)} size="lg">
+          <div className="space-y-4">
+            <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-2">
+              <span className="text-lg">✅</span>
+              <p className="text-sm font-bold text-green-700">Invoice <span className="font-black">{showWA.inv.invoiceNo}</span> berhasil dibuat!</p>
+            </div>
+
+            {/* Step 1: Cetak PDF */}
+            <div className="bg-blue-50 rounded-xl p-4">
+              <p className="text-xs font-black text-blue-700 uppercase tracking-widest mb-3">Langkah 1 — Lihat Invoice</p>
+              <button onClick={()=>{
+                const inv = showWA.inv;
+                setShowWA(null);
+                setPreviewInv(inv);
+              }}
+                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl transition flex items-center justify-center gap-2 text-sm">
+                🖨 Buka Invoice &amp; Simpan PDF
+              </button>
+              <p className="text-xs text-blue-500 mt-2">Invoice terbuka fullscreen → screenshot atau Print → Save as PDF</p>
+            </div>
+
+            {/* Step 2: Pesan WA */}
+            <div>
+              <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Langkah 2 — Salin Pesan WA</p>
+              <div className="flex justify-end mb-2">
+                <button onClick={async()=>{
+                  const ok = await clipCopy(showWA.msg);
+                  setCopied("wa"); setTimeout(()=>setCopied(""),3000);
+                }} className={`px-3 py-1.5 text-xs font-bold rounded-xl transition ${copied==="wa"?"bg-emerald-100 text-emerald-700":"bg-slate-100 hover:bg-slate-200 text-slate-700"}`}>
+                  {copied==="wa"?"✓ Tersalin!":"📋 Salin Pesan"}
+                </button>
+              </div>
+              <textarea readOnly value={showWA.msg} onClick={e=>e.target.select()}
+                className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 bg-slate-50 focus:outline-none resize-none font-mono leading-relaxed"
+                rows={13}/>
+              <p className="text-xs text-slate-400 mt-1.5">💡 Tap teks → tahan → Pilih Semua → Salin. Lalu kirim PDF + pesan ini ke WA penyewa.</p>
+            </div>
+
+            <div className="flex gap-2 justify-end pt-1">
+              <Btn v="secondary" onClick={()=>setShowWA(null)}>Tutup</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Generate modal */}
+      {modal&&(
+        <Modal title={`Buat Invoice – ${form.tenantName}`} onClose={()=>setModal(null)} size="lg">
+          <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-3 bg-slate-50 rounded-xl p-4">
+              <div><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Kamar</p><p className="font-black text-blue-600">K-{form.roomNomor}</p></div>
+              <div><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tipe</p><p className="font-bold text-slate-700">{form.roomTipe}</p></div>
+              <div><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">No HP</p><p className="font-bold text-slate-700">{form.tenantHp}</p></div>
+            </div>
+
+            <div>
+              <label className="text-xs font-black text-slate-600 block mb-1">Bulan Tagihan</label>
+              <select className={inp} value={form.targetMonth} onChange={e=>updateMonth(e.target.value)}>
+                {ms.map(m=><option key={m} value={m}>{mLbl(m)}</option>)}
+              </select>
+            </div>
+
+            <div className="bg-blue-50 rounded-xl p-4">
+              <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1">Periode Tagihan Otomatis</p>
+              <p className="font-black text-slate-800 text-lg">{form.periode?.label}</p>
+              <p className="text-xs text-slate-400 mt-1">Dihitung dari jatuh tempo tgl {modal.jatuhTempo} setiap bulan</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-black text-slate-600 block mb-1">Nominal (Rp)</label>
+                <input type="number" className={inp} value={form.nominal||0} onChange={e=>setForm({...form,nominal:+e.target.value})}/>
+              </div>
+              <div>
+                <label className="text-xs font-black text-slate-600 block mb-1">Tanggal Jatuh Tempo</label>
+                <input type="date" className={inp} value={form.dueDate||""} onChange={e=>setForm({...form,dueDate:e.target.value})}/>
+              </div>
+            </div>
+
+            {settings.bankAccounts?.length>0?(
+              <div className="bg-slate-50 rounded-xl p-4">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Rekening di Invoice</p>
+                {settings.bankAccounts.map((b,i)=>(
+                  <p key={i} className="text-sm"><span className="font-black">{b.bank}</span> {b.noRek} <span className="text-slate-400">a.n. {b.atasNama}</span></p>
+                ))}
+              </div>
+            ):(
+              <div className="bg-amber-50 rounded-xl p-4">
+                <p className="text-xs font-bold text-amber-600">⚠ Belum ada rekening. Tambahkan di Pengaturan dulu agar muncul di invoice.</p>
+              </div>
+            )}
+
+            <div className="flex gap-2 justify-end pt-2">
+              <Btn v="secondary" onClick={()=>setModal(null)}>Batal</Btn>
+              <Btn onClick={generate}><FileText size={14}/>Generate Invoice</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+
+function StatusBayarPage({ rooms, tenants, payments }) {
+  const [fMonth,setFMonth]=useState(new Date().toISOString().slice(0,7));
+  const [search,setSearch]=useState("");
+  const ms=Array.from({length:12},(_,i)=>{const d=new Date();d.setMonth(d.getMonth()-i);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;});
+  const today=new Date();
+  const active=tenants.filter(t=>t.aktif);
+  const fil=active.filter(t=>!search||t.nama?.toLowerCase().includes(search.toLowerCase()));
+  const getSt=(t)=>{
+    const paid=payments.find(p=>p.penyewaId===t.id&&p.periode===fMonth);
+    if(paid)return{st:"lunas",nom:paid.nominal};
+    const[y,m]=fMonth.split("-").map(Number);
+    if(y===today.getFullYear()&&m===today.getMonth()+1&&t.jatuhTempo){
+      return{st:new Date(y,m-1,t.jatuhTempo)<today?"telat":"belum",nom:0};
+    }
+    return{st:"telat",nom:0};
+  };
+  const stats={lunas:0,belum:0,telat:0};
+  active.forEach(t=>{const{st}=getSt(t);stats[st]=(stats[st]||0)+1;});
+  const inp="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
+  return (
+    <div className="space-y-5">
+      <div><h1 className="text-2xl font-black text-slate-900">Status Pembayaran</h1></div>
+      <div className="flex items-center gap-3">
+        <label className="text-sm font-bold text-slate-600">Bulan:</label>
+        <select value={fMonth} onChange={e=>setFMonth(e.target.value)} className={inp+" w-44"}>
+          {ms.map(m=><option key={m} value={m}>{new Date(m+"-01").toLocaleDateString("id-ID",{month:"long",year:"numeric"})}</option>)}
+        </select>
+      </div>
+      <div className="grid grid-cols-3 gap-4">
+        {[["Sudah Lunas",stats.lunas,"text-emerald-600"],["Belum Bayar",stats.belum,"text-amber-600"],["Terlambat",stats.telat,"text-red-600"]].map(([l,v,c])=>(
+          <div key={l} className="bg-white rounded-2xl border border-slate-100 p-4 text-center shadow-sm">
+            <p className={`text-3xl font-black ${c}`}>{v}</p>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">{l}</p>
+          </div>
+        ))}
+      </div>
+      <div className="relative"><Search size={15} className="absolute left-4 top-3 text-slate-400"/>
+        <input className={inp+" pl-10"} placeholder="Cari nama..." value={search} onChange={e=>setSearch(e.target.value)}/></div>
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b">
-            <tr>{['Waktu','User','Aksi','Detail'].map(h=>(
-              <th key={h} className="text-left px-3 py-2.5 text-gray-600 font-medium">{h}</th>
-            ))}</tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {logs.length===0 ? (
-              <tr><td colSpan={4} className="text-center py-8 text-gray-400">Belum ada log</td></tr>
-            ) : logs.slice(0,200).map(l=>(
-              <tr key={l.id} className="hover:bg-gray-50">
-                <td className="px-3 py-2 text-gray-500 whitespace-nowrap text-xs">{l.ts?.slice(0,16).replace('T',' ')}</td>
-                <td className="px-3 py-2"><Badge color="blue">{l.user}</Badge></td>
-                <td className="px-3 py-2 font-medium">{l.action}</td>
-                <td className="px-3 py-2 text-gray-600">{l.detail}</td>
+          <thead><tr className="border-b border-slate-100">{["Kamar","Nama","HP","JT","Status","Nominal"].map(h=><th key={h} className="text-left px-5 py-3 text-xs font-bold text-slate-400 uppercase">{h}</th>)}</tr></thead>
+          <tbody>
+            {fil.length===0&&<tr><td colSpan={6} className="text-center py-8 text-slate-400">Tidak ada penyewa</td></tr>}
+            {fil.map(t=>{const rm=rooms.find(r=>r.id===t.kamarId);const{st,nom}=getSt(t);return(
+              <tr key={t.id} className="border-b border-slate-50 hover:bg-slate-50">
+                <td className="px-5 py-3 font-black text-blue-600">K-{rm?.nomor||"?"}</td>
+                <td className="px-5 py-3 font-bold">{t.nama}</td>
+                <td className="px-5 py-3 text-slate-500 text-xs">{t.hp}</td>
+                <td className="px-5 py-3 text-slate-500">Tgl {t.jatuhTempo}</td>
+                <td className="px-5 py-3"><span className={`text-xs font-bold px-2.5 py-1 rounded-full ${st==="lunas"?"bg-emerald-100 text-emerald-700":st==="telat"?"bg-red-100 text-red-600":"bg-amber-100 text-amber-700"}`}>{st==="lunas"?"✓ Lunas":st==="telat"?"✗ Telat":"⏳ Belum"}</span></td>
+                <td className="px-5 py-3 font-bold">{nom?"Rp "+nom.toLocaleString("id-ID"):"-"}</td>
+              </tr>
+            );})}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function MutasiBankKasPage({ settings, saveSettings, payments, expenses, rooms, tenants, addAudit, user, role, kasTx, saveKas }) {
+  const [tab,setTab]=useState("bank");
+  const [fMonth,setFMonth]=useState("");
+  const ms=Array.from({length:6},(_,i)=>{const d=new Date();d.setMonth(d.getMonth()-i);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;});
+  const inp="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none";
+  const fRp=(n)=>"Rp "+Math.round(n||0).toLocaleString("id-ID");
+  const fD=(d)=>d?new Date(d).toLocaleDateString("id-ID",{day:"2-digit",month:"short",year:"numeric"}):"-";
+
+  const bankIn=payments.map(p=>{const rm=rooms.find(r=>r.id===p.kamarId);const t=tenants.find(x=>x.id===p.penyewaId);return{id:p.id,tanggal:p.tanggal,tipe:"masuk",jumlah:+p.nominal,desc:`Sewa K-${rm?.nomor||"?"} - ${t?.nama||"?"}`,periode:p.periode};});
+  const bankOut=[...expenses.filter(e=>e.status==="approved"&&e.sumber==="bank").map(e=>({id:e.id,tanggal:e.tanggal,tipe:"keluar",jumlah:+e.nominal,desc:`${e.kategori}: ${e.deskripsi}`})),
+    ...(kasTx||[]).filter(k=>k.tipe==="masuk").map(k=>({id:k.id+"b",tanggal:k.tanggal,tipe:"keluar",jumlah:+k.jumlah,desc:"Transfer ke Kas"}))];
+  const kasIn=(kasTx||[]).filter(k=>k.tipe==="masuk");
+  const kasOut=expenses.filter(e=>e.status==="approved"&&(e.sumber==="kas"||!e.sumber)).map(e=>({id:e.id,tanggal:e.tanggal,tipe:"keluar",jumlah:+e.nominal,desc:`${e.kategori}: ${e.deskripsi}`}));
+
+  const fil=(arr)=>(fMonth?arr.filter(t=>(t.periode||t.tanggal||"").startsWith(fMonth)):arr).sort((a,b)=>new Date(a.tanggal)-new Date(b.tanggal));
+  const s0bank=+(settings.saldoAwal?.jumlah)||0, s0kas=+(settings.saldoKas?.jumlah)||0;
+  const calcRows=(arr,s0)=>{let b=s0;return fil(arr).map(t=>{b+=t.tipe==="masuk"?t.jumlah:-t.jumlah;return{...t,saldo:b};});};
+  const bankRows=calcRows([...bankIn,...bankOut],s0bank);
+  const kasRows=calcRows([...kasIn,...kasOut],s0kas);
+  const bankAkhir=s0bank+fil([...bankIn,...bankOut]).reduce((s,t)=>s+(t.tipe==="masuk"?t.jumlah:-t.jumlah),0);
+  const kasAkhir=s0kas+fil([...kasIn,...kasOut]).reduce((s,t)=>s+(t.tipe==="masuk"?t.jumlah:-t.jumlah),0);
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div><h1 className="text-2xl font-black text-slate-900">Mutasi Keuangan</h1><p className="text-slate-400 text-sm">Bank & Kas Operasional</p></div>
+        {role==="admin"&&<button onClick={async()=>{const j=prompt("Jumlah transfer Bank ke Kas:");if(!j||isNaN(j))return;const tx={id:Math.random().toString(36).substr(2),tanggal:new Date().toISOString().split("T")[0],tipe:"masuk",jumlah:+j,deskripsi:"Transfer dari Bank",inputBy:user,inputAt:new Date().toISOString()};await saveKas([...(kasTx||[]),tx]);alert("Transfer berhasil!");}} className="px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded-xl">Transfer Bank→Kas</button>}
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[["Saldo Bank",fRp(bankAkhir),"text-blue-600"],["Saldo Kas",fRp(kasAkhir),"text-amber-600"],
+          ["Total Masuk Bank",fRp(fil([...bankIn]).reduce((s,t)=>s+t.jumlah,0)),"text-emerald-600"],
+          ["Total Keluar Kas",fRp(fil([...kasOut]).reduce((s,t)=>s+t.jumlah,0)),"text-red-600"]].map(([l,v,c])=>(
+          <div key={l} className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+            <p className="text-xs font-bold text-slate-400 uppercase">{l}</p>
+            <p className={`text-xl font-black mt-1 ${c}`}>{v}</p>
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex rounded-xl overflow-hidden border border-slate-200">
+          {[["bank","🏦 Bank"],["kas","💵 Kas"]].map(([t,l])=>(
+            <button key={t} onClick={()=>setTab(t)} className={`px-5 py-2 text-sm font-bold ${tab===t?"bg-blue-600 text-white":"bg-white text-slate-600"}`}>{l}</button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-sm font-bold text-slate-600">Periode:</label>
+          <select value={fMonth} onChange={e=>setFMonth(e.target.value)} className={inp+" w-44"}>
+            <option value="">Semua</option>{ms.map(m=><option key={m} value={m}>{new Date(m+"-01").toLocaleDateString("id-ID",{month:"long",year:"numeric"})}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead><tr className="border-b border-slate-100">{["Tanggal","Deskripsi","Tipe","Jumlah","Saldo"].map(h=><th key={h} className="text-left px-5 py-3 text-xs font-bold text-slate-400 uppercase">{h}</th>)}</tr></thead>
+          <tbody>
+            {(tab==="bank"?bankRows:kasRows).length===0&&<tr><td colSpan={5} className="text-center py-8 text-slate-400">Belum ada transaksi</td></tr>}
+            {(tab==="bank"?bankRows:kasRows).map(t=>(
+              <tr key={t.id} className="border-b border-slate-50 hover:bg-slate-50">
+                <td className="px-5 py-3 text-xs text-slate-500">{fD(t.tanggal)}</td>
+                <td className="px-5 py-3 text-slate-800">{t.desc}</td>
+                <td className="px-5 py-3"><span className={`text-xs font-bold px-2 py-1 rounded-full ${t.tipe==="masuk"?"bg-emerald-100 text-emerald-700":"bg-red-100 text-red-600"}`}>{t.tipe==="masuk"?"↑ Masuk":"↓ Keluar"}</span></td>
+                <td className={`px-5 py-3 font-black ${t.tipe==="masuk"?"text-emerald-600":"text-red-600"}`}>{t.tipe==="masuk"?"+":"-"}{fRp(t.jumlah)}</td>
+                <td className="px-5 py-3 font-bold text-slate-800">{fRp(t.saldo)}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
     </div>
-  )
+  );
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// MAIN APP — THE KEY FIX IS HERE
-// Both login screen and main app are always mounted (CSS toggle, not conditional swap)
-// This prevents React 18 removeChild DOM reconciliation errors
-// ══════════════════════════════════════════════════════════════════════════════
 export default function App() {
-  const [user, setUser]   = useState(null)
-  const [page, setPage]   = useState('dashboard')
+  const [role,    setRole]    = useState(null);
+  const [user,    setUser]    = useState(null);
+  const [page,    setPage]    = useState("dashboard");
+  const [open,    setOpen]    = useState(true);
+  const [settings,setSettings]= useState(DEF);
+  const [rooms,   setRooms]   = useState([]);
+  const [tenants, setTenants] = useState([]);
+  const [payments,setPayments]= useState([]);
+  const [expenses,setExpenses]= useState([]);
+  const [audit,   setAudit]   = useState([]);
+  const [users,   setUsers]   = useState(DEF_USERS);
+  const [kasTx,   setKasTx]   = useState([]);
+  const [iv,      setIV]      = useState(null);
 
-  const logAction = useCallback(async (action, detail='') => {
-    if (!user) return
-    await fbPush('km_logs', { action, detail, user:user.name, role:user.role, ts:nowTs() })
-  }, [user])
+  // Restore session
+  useEffect(()=>{
+    try{const s=localStorage.getItem("km-session");if(s){const{u,r}=JSON.parse(s);if(u&&r){setUser(u);setRole(r);}}}catch{}
+  },[]);
 
-  const handleLogin  = u => { setUser(u); setPage('dashboard') }
-  const handleLogout = () => { setUser(null) }
-
-  const renderPage = () => {
-    const props = { user, logAction }
-    switch(page) {
-      case 'dashboard':    return <Dashboard    {...props} />
-      case 'kamar':        return <Kamar        {...props} />
-      case 'penyewa':      return <Penyewa      {...props} />
-      case 'pembayaran':   return <Pembayaran   {...props} />
-      case 'invoice':      return <Invoice      {...props} />
-      case 'statusbayar':  return <StatusBayar  {...props} />
-      case 'kaskeluar':    return <KasKeluar    {...props} />
-      case 'mutasibank':   return <MutasiBank   {...props} />
-      case 'laporan':      return <Laporan      {...props} />
-      case 'pengaturan':   return <Pengaturan   {...props} />
-      case 'logaktivitas': return <LogAktivitas {...props} />
-      default:             return <Dashboard    {...props} />
+  // Load data in background (never blocks UI)
+  useEffect(()=>{
+    // Check invoice hash
+    const hash=window.location.hash;
+    if(hash.startsWith("#inv-")){
+      store.get("km-inv-"+hash.replace("#inv-","")).then(inv=>setIV(inv||"notfound")).catch(()=>{});
+      return;
     }
-  }
+    (async()=>{
+      try{
+        const s=await store.get(SK.S); if(s)setSettings(s);
+        const r=await store.get(SK.R); if(r&&r.length>0)setRooms(r); else{const nr=mkRooms();setRooms(nr);store.set(SK.R,nr);}
+        const res=await Promise.allSettled([store.get(SK.T),store.get(SK.P),store.get(SK.E),store.get(SK.A),store.get("km-users"),store.get(SK.K)]);
+        if(res[0].value)setTenants(res[0].value);
+        if(res[1].value)setPayments(res[1].value);
+        if(res[2].value)setExpenses(res[2].value);
+        if(res[3].value)setAudit(res[3].value);
+        if(res[4].value?.length)setUsers(res[4].value);
+        if(res[5].value)setKasTx(res[5].value);
+      }catch(e){console.error(e);}
+    })();
+  },[]);
 
+  const saveUsers=async(d)=>{setUsers(d);await store.set("km-users",d);};
+  const saveKas=async(d)=>{setKasTx(d);await store.set(SK.K,d);};
+  const login=(u)=>{setUser(u.id);setRole(u.role);try{localStorage.setItem("km-session",JSON.stringify({u:u.id,r:u.role}));}catch{}};
+  const logout=()=>{setUser(null);setRole(null);setPage("dashboard");try{localStorage.removeItem("km-session");}catch{}};
+  const addAudit=async(action,detail)=>{const e={id:Math.random().toString(36).substr(2)+Date.now().toString(36),action,detail,by:user,at:new Date().toISOString()};const na=[e,...(audit||[])].slice(0,200);setAudit(na);await store.set(SK.A,na);};
+
+  const save={
+    settings:async(d)=>{setSettings(d);await store.set(SK.S,d);},
+    rooms:   async(d)=>{setRooms(d);   await store.set(SK.R,d);},
+    tenants: async(d)=>{setTenants(d); await store.set(SK.T,d);},
+    payments:async(d)=>{setPayments(d);await store.set(SK.P,d);},
+    expenses:async(d)=>{setExpenses(d);await store.set(SK.E,d);},
+  };
+
+  const resetData=async(key)=>{await store.set(key,"null");};
+
+  const resetAll=async(what)=>{
+    if(what==="penyewa"){
+      // Reset tenants + rooms (set all kosong) + payments + invoices
+      if(!confirm("Reset semua data penyewa, pembayaran, dan invoice?\n\nData yang dihapus TIDAK bisa dikembalikan!")) return;
+      await store.set(SK.T,"null");
+      await store.set(SK.P,"null");
+      await store.set(SK.E,"null");
+      await store.set("km-invoices","null");
+      await store.set(SK.A,"null");
+      await store.set(SK.K,"null");
+      // Reset all rooms to kosong
+      const cleanRooms = rooms.map(r=>({...r,status:"kosong",penyewaId:null}));
+      await store.set(SK.R, cleanRooms);
+      setRooms(cleanRooms); setTenants([]); setPayments([]); setExpenses([]); setAudit([]); setKasTx([]);
+      alert("✅ Semua data berhasil direset! Web sekarang seperti baru.");
+    }
+  };
+
+  const ctx={role,user,settings,rooms,tenants,payments,expenses,audit,users,kasTx,
+    saveSettings:save.settings,saveRooms:save.rooms,saveTenants:save.tenants,
+    savePayments:save.payments,saveExpenses:save.expenses,addAudit,saveUsers,saveKas};
+
+  // Invoice view
+  if(iv) return <InvoicePublicView inv={iv==="notfound"?null:iv}/>;
+
+  // Not logged in — show login
+  if(!role) return <LoginScreen settings={settings} users={users} onLogin={login}/>;
+
+  // Logged in — show app
   return (
-    // Single stable root — NEVER unmounts or swaps at top level
-    // This is the fix: both views coexist in DOM, toggled via display CSS
-    <div style={{height:'100vh',overflow:'hidden'}}>
-      {/* LOGIN — shown when no user */}
-      <div style={{display: user ? 'none' : 'block', height:'100%'}}>
-        <LoginScreen onLogin={handleLogin} />
-      </div>
-
-      {/* MAIN APP — shown when user is set */}
-      <div style={{display: user ? 'block' : 'none', height:'100%'}}>
-        {user && (
-          <Layout user={user} onLogout={handleLogout} page={page} setPage={setPage}>
-            {renderPage()}
-          </Layout>
-        )}
-      </div>
-    </div>
-  )
+    <Layout page={page} setPage={setPage} role={role} user={user} onLogout={logout}
+            expenses={expenses} open={open} setOpen={setOpen}>
+      {page==="dashboard" && <Dashboard {...ctx} setPage={setPage}/>}
+      {page==="rooms"     && <RoomsPage {...ctx}/>}
+      {page==="tenants"   && <TenantsPage {...ctx}/>}
+      {page==="payments"  && <PaymentsPage {...ctx}/>}
+      {page==="expenses"  && <ExpensesPage {...ctx}/>}
+      {page==="invoices"  && <InvoicesPage {...ctx}/>}
+      {page==="status"    && <StatusBayarPage {...ctx}/>}
+      {page==="mutasi"    && (role==="admin"||role==="investor") && <MutasiBankKasPage {...ctx}/>}
+      {page==="reports"   && (role==="admin"||role==="investor") && <ReportsPage {...ctx}/>}
+      {page==="settings"  && role==="admin" && <SettingsPage {...ctx} onReset={resetData}/>}
+      {page==="audit"     && (role==="admin"||role==="investor") && <AuditPage {...ctx}/>}
+    </Layout>
+  );
 }
