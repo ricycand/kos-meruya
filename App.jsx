@@ -829,7 +829,11 @@ function PaymentsPage({ role, user, rooms, tenants, payments, savePayments, addA
 function ExpensesPage({ role, user, expenses, saveExpenses, addAudit }) {
   const [modal,  setModal]  = useState(false);
   const [form,   setForm]   = useState({});
-  const [fMonth, setFMonth] = useState(tMon());
+  const [fBulan, setFBulan] = useState(String(new Date().getMonth()+1).padStart(2,"0"));
+  const [fTahun, setFTahun] = useState(String(new Date().getFullYear()));
+  const fMonth = `${fTahun}-${fBulan}`;
+  const bulanList = [{v:"01",l:"Januari"},{v:"02",l:"Februari"},{v:"03",l:"Maret"},{v:"04",l:"April"},{v:"05",l:"Mei"},{v:"06",l:"Juni"},{v:"07",l:"Juli"},{v:"08",l:"Agustus"},{v:"09",l:"September"},{v:"10",l:"Oktober"},{v:"11",l:"November"},{v:"12",l:"Desember"}];
+  const tahunList = Array.from({length:3},(_,i)=>String(new Date().getFullYear()-i));
   const isEdit = role==="admin"||role==="staff";
   const isInv  = role==="admin"||role==="investor";
   const ms = months6();
@@ -874,13 +878,16 @@ function ExpensesPage({ role, user, expenses, saveExpenses, addAudit }) {
         {isEdit&&<Btn onClick={openAdd}><Plus size={16}/>Input Pengeluaran</Btn>}
       </div>
 
-      <div className="flex gap-2 flex-wrap">
-        {ms.map(m=>(
-          <button key={m} onClick={()=>setFMonth(m)}
-            className={`px-4 py-1.5 rounded-xl text-sm font-semibold transition-all ${fMonth===m?"bg-blue-600 text-white shadow-sm":"bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-            {mLbl(m)}
-          </button>
-        ))}
+      <div className="flex items-center gap-3">
+        <label className="text-sm font-bold text-slate-600">Periode:</label>
+        <select value={fBulan} onChange={e=>setFBulan(e.target.value)}
+          className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          {bulanList.map(b=><option key={b.v} value={b.v}>{b.l}</option>)}
+        </select>
+        <select value={fTahun} onChange={e=>setFTahun(e.target.value)}
+          className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          {tahunList.map(t=><option key={t} value={t}>{t}</option>)}
+        </select>
       </div>
 
       <Card>
