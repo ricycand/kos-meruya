@@ -601,12 +601,12 @@ function TenantsPage({ role, rooms, tenants, saveTenants, saveRooms, addAudit })
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="border-b border-slate-100">
-              {["Kamar","Lantai","Nama","HP","Masuk","JT","Deposit","Status",""].map(h=>(
+              {["Kamar","Lantai","Nama","HP","Masuk","Keluar","JT","Deposit","Status",""].map(h=>(
                 <th key={h} className="text-left px-5 py-3.5 text-xs font-bold text-slate-400 uppercase tracking-widest">{h}</th>
               ))}
             </tr></thead>
             <tbody>
-              {filtered.length===0&&<tr><td colSpan={9} className="text-center py-10 text-slate-400 text-sm">Belum ada data penyewa</td></tr>}
+              {filtered.length===0&&<tr><td colSpan={10} className="text-center py-10 text-slate-400 text-sm">Belum ada data penyewa</td></tr>}
               {filtered.map(t=>{
                 const room=rooms.find(r=>r.id===t.kamarId);
                 return (
@@ -616,6 +616,7 @@ function TenantsPage({ role, rooms, tenants, saveTenants, saveRooms, addAudit })
                     <td className="px-5 py-3.5 font-bold text-slate-800">{t.nama}</td>
                     <td className="px-5 py-3.5 text-slate-500">{t.hp||"—"}</td>
                     <td className="px-5 py-3.5 text-slate-500">{fD(t.tanggalMasuk)}</td>
+                    <td className="px-5 py-3.5 text-slate-500">{t.tanggalKeluar?fD(t.tanggalKeluar):<span className="text-slate-300">—</span>}</td>
                     <td className="px-5 py-3.5 text-slate-500">Tgl {t.jatuhTempo}</td>
                     <td className="px-5 py-3.5 text-slate-500">{fRp(t.deposit)}</td>
                     <td className="px-5 py-3.5"><Badge status={t.aktif?"aktif":"keluar"}/></td>
