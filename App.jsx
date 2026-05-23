@@ -424,24 +424,24 @@ function RoomsPage({ role, rooms, tenants, payments, saveRooms, addAudit }) {
       </div>
 
       {/* Status filter */}
-      <div className="flex flex-wrap gap-2">
-        {["semua","kosong","terisi","maintenance"].map(f=>(
-          <button key={f} onClick={()=>setFilter(f)}
-            className={`px-4 py-1.5 rounded-xl text-sm font-semibold capitalize transition-all ${filter===f?"bg-blue-600 text-white shadow-sm":"bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-            {f}
-          </button>
-        ))}
-      </div>
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <label className="text-sm font-bold text-slate-600">Status:</label>
+          <select value={filter} onChange={e=>setFilter(e.target.value)} className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="semua">Semua</option>
+            <option value="kosong">Kosong</option>
+            <option value="terisi">Terisi</option>
+            <option value="maintenance">Maintenance</option>
+          </select>
+        </div>
 
-      {/* Lantai filter */}
-      <div className="flex flex-wrap gap-2 items-center">
-        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mr-1">Lantai:</span>
-        {["semua",...lantais].map(l=>(
-          <button key={l} onClick={()=>setLantai(String(l))}
-            className={`px-4 py-1.5 rounded-xl text-sm font-semibold transition-all ${lantai===String(l)?"bg-indigo-600 text-white shadow-sm":"bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-            {l==="semua"?"Semua":`Lantai ${l}`}
-          </button>
-        ))}
+        <div className="flex items-center gap-2">
+          <label className="text-sm font-bold text-slate-600">Lantai:</label>
+          <select value={lantai} onChange={e=>setLantai(e.target.value)} className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="semua">Semua Lantai</option>
+            {lantais.map(l=><option key={l} value={String(l)}>Lantai {l}</option>)}
+          </select>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-3 text-xs text-slate-500">
