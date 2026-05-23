@@ -1707,34 +1707,32 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
     const room = rooms.find(r=>r.id===t.kamarId);
     if (!room?.harga) return alert("Set harga kamar terlebih dahulu.");
     const n = +multiMonths;
-    let newInvs = [...invoices];
-    const generated = [];
-    // Start from next month if current month already has invoice
     const today = new Date();
-    let startMonth = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}`;
-    for (let i=0; i<n; i++) {
-      const [y,m] = startMonth.split("-").map(Number);
-      const d = new Date(y, m-1+i, 1);
-      const tm = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
-      const per = calcPeriode(t.jatuhTempo, tm);
-      const inv = {
-        id:uid(), invoiceNo:nextInvNo(tm),
-        tenantId:t.id, tenantName:t.nama, tenantHp:t.hp,
-        kamarId:t.kamarId, roomNomor:room.nomor, roomTipe:room.tipe||"Standard",
-        nominal:room.harga, targetMonth:tm, periode:per, dueDate:per.start,
-        bankAccounts:settings.bankAccounts||[], companyInfo:settings.companyInfo||{name:"Kos Meruya"},
-        generatedBy:user, generatedAt:now(), paid:false,
-      };
-      await store.set(`km-inv-${inv.id}`, inv);
-      newInvs = [inv, ...newInvs];
-      generated.push(inv.invoiceNo);
-    }
-    await saveInvs(newInvs);
-    await addAudit("INVOICE_MULTI", `${n} invoice dibuat untuk ${t.nama}: ${generated.join(", ")}`);
+    const startTm = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}`;
+    const startPer = calcPeriode(t.jatuhTempo, startTm);
+    const endD = new Date(today.getFullYear(), today.getMonth()+n, t.jatuhTempo-1);
+    const endLabel = endD.toLocaleDateString("id-ID",{day:"numeric",month:"long",year:"numeric"});
+    const totalNominal = room.harga * n;
+    const per = {
+      start: startPer.start,
+      end: endD.toISOString().split("T")[0],
+      label: `${startPer.label.split(" – ")[0]} – ${endLabel}`
+    };
+    const inv = {
+      id:uid(), invoiceNo:nextInvNo(startTm),
+      tenantId:t.id, tenantName:t.nama, tenantHp:t.hp,
+      kamarId:t.kamarId, roomNomor:room.nomor, roomTipe:room.tipe||"Standard",
+      nominal:totalNominal, targetMonth:startTm, periode:per, dueDate:per.start,
+      multiBulan:n, hargaPerBulan:room.harga,
+      bankAccounts:settings.bankAccounts||[], companyInfo:settings.companyInfo||{name:"Kos Meruya"},
+      generatedBy:user, generatedAt:now(), paid:false,
+    };
+    await store.set(`km-inv-${inv.id}`, inv);
+    await saveInvs([inv, ...invoices]);
+    await addAudit("INVOICE_MULTI", `Invoice ${n} bulan untuk ${t.nama} (${inv.invoiceNo}) - ${fRp(totalNominal)}`);
     setMultiModal(null);
-    alert(`✅ ${n} invoice berhasil dibuat!
-${generated.join(", ")}`);
-  };
+    alert(`✅ Invoice ${n} bulan berhasil dibuat!\nTotal: ${fRp(totalNominal)}`);
+  };;
 
   const cancelInvoice = async (inv) => {
     if (!confirm(`Batalkan invoice ${inv.invoiceNo} untuk ${inv.tenantName}?\nInvoice akan dihapus permanen.`)) return;
