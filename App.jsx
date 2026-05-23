@@ -730,13 +730,12 @@ function PaymentsPage({ role, user, rooms, tenants, payments, savePayments, addA
         {isEdit&&<Btn onClick={openAdd}><Plus size={16}/>Input Pembayaran</Btn>}
       </div>
 
-      <div className="flex gap-2 flex-wrap">
-        {ms.map(m=>(
-          <button key={m} onClick={()=>setFMonth(m)}
-            className={`px-4 py-1.5 rounded-xl text-sm font-semibold transition-all ${fMonth===m?"bg-blue-600 text-white shadow-sm":"bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-            {mLbl(m)}
-          </button>
-        ))}
+      <div className="flex items-center gap-2">
+        <label className="text-sm font-bold text-slate-600">Periode:</label>
+        <select value={fMonth} onChange={e=>setFMonth(e.target.value)}
+          className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          {ms.map(m=><option key={m} value={m}>{mLbl(m)}</option>)}
+        </select>
       </div>
 
       <Card>
