@@ -233,8 +233,8 @@ function Layout({ children, page, setPage, role, user, onLogout, expenses, open,
 // ═══════════════════════════════════════════════
 function Dashboard({ role, user, rooms, tenants, payments, expenses, settings, setPage }) {
   const cm = tMon();
-  const terisi   = rooms.filter(r=>r.status==="terisi").length;
-  const kosong   = rooms.filter(r=>r.status==="kosong").length;
+  const terisi   = tenants.filter(t=>t.aktif).length;
+  const kosong   = rooms.length - terisi;
   const income   = payments.filter(p=>p.periode===cm).reduce((s,p)=>s+p.nominal,0);
   const spend    = expenses.filter(e=>e.periode===cm&&e.status==="approved").reduce((s,e)=>s+e.nominal,0);
   const pending  = expenses.filter(e=>e.status==="pending");
