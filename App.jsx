@@ -13,7 +13,7 @@ const store={
   set:async(k,v)=>{try{const r=await fetch(`${FB}/${toKey(k)}.json`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(JSON.stringify(v))});return r.ok;}catch{return false;}}
 };
 
-const SK={S:"km-settings",R:"km-rooms",T:"km-tenants",P:"km-payments",E:"km-expenses",A:"km-audit",K:"km-kas"};
+const SK={S:"km-settings",R:"km-rooms",T:"km-tenants",P:"km-payments",E:"km-expenses",A:"km-audit",K:"km-kas",BH:"km-bagihasil"};
 
 // Firebase sometimes returns objects instead of arrays — always convert
 const toArr=(v)=>{
@@ -166,7 +166,9 @@ function Layout({ children, page, setPage, role, user, onLogout, expenses, open,
     { id:"payments",  icon:CreditCard,label:"Pembayaran",      roles:["admin","investor","staff"] },
     { id:"expenses",  icon:Wallet,    label:"Kas & Keluar",    roles:["admin","investor","staff"] },
     { id:"invoices",  icon:FileText,  label:"Invoice",         roles:["admin","investor","staff"] },
+    { id:"mutasi",    icon:TrendingUp,label:"Mutasi Keuangan", roles:["admin","investor"] },
     { id:"reports",   icon:BarChart2, label:"Laporan",         roles:["admin","investor"] },
+    { id:"bagihasil", icon:TrendingUp,label:"Bagi Hasil",      roles:["admin"] },
     { id:"settings",  icon:Settings,  label:"Pengaturan",      roles:["admin"] },
     { id:"audit",     icon:List,      label:"Log Aktivitas",   roles:["admin","investor"] },
   ].filter(n => n.roles.includes(role));
@@ -963,167 +965,230 @@ function ExpensesPage({ role, user, expenses, saveExpenses, addAudit }) {
 // ═══════════════════════════════════════════════
 // REPORTS PAGE
 // ═══════════════════════════════════════════════
-function ReportsPage({ rooms, tenants, payments, expenses, settings, audit }) {
+function ReportsPage({ rooms, tenants, payments, expenses, settings, audit, kasTx, bagiHasil }) {
   const [fBulan, setFBulan] = useState(String(new Date().getMonth()+1).padStart(2,"0"));
   const [fTahun, setFTahun] = useState(String(new Date().getFullYear()));
+  const [tab, setTab] = useState("pendapatan");
   const month = `${fTahun}-${fBulan}`;
   const bulanList = [{v:"01",l:"Januari"},{v:"02",l:"Februari"},{v:"03",l:"Maret"},{v:"04",l:"April"},{v:"05",l:"Mei"},{v:"06",l:"Juni"},{v:"07",l:"Juli"},{v:"08",l:"Agustus"},{v:"09",l:"September"},{v:"10",l:"Oktober"},{v:"11",l:"November"},{v:"12",l:"Desember"}];
   const tahunList = Array.from({length:3},(_,i)=>String(new Date().getFullYear()-i));
+  const inp = "bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
 
-  const mPay  = payments.filter(p=>p.periode===month);
-  const mExp  = expenses.filter(e=>e.periode===month&&e.status==="approved");
-  const totIn = mPay.reduce((s,p)=>s+p.nominal,0);
-  const totEx = mExp.reduce((s,e)=>s+e.nominal,0);
-  const occ   = rooms.length>0?Math.round(rooms.filter(r=>r.status==="terisi").length/rooms.length*100):0;
+  // Filter by month
+  const mPay = payments.filter(p=>p.periode===month);
+  const mExpBank = expenses.filter(e=>e.periode===month&&e.status==="approved"&&e.sumber==="bank");
+  const mExpKas = expenses.filter(e=>e.periode===month&&e.status==="approved"&&(e.sumber==="kas"||!e.sumber));
+  const mKasIn = (kasTx||[]).filter(k=>k.tipe==="masuk"&&k.tanggal?.startsWith(month));
+  const mBagi = (bagiHasil||[]).filter(b=>b.tanggal?.startsWith(month));
 
-  const kas   = settings.kasOperasional||10000000;
-  const fee   = settings.feeManager||10;
-  const k     = settings.kepemilikan||DEF.kepemilikan;
-  const bersih= totIn;
-  const fFerry= bersih*(fee/100);
-  const dibagi= bersih-fFerry;
-  const bagian= { ricy:dibagi*(k.ricy/100), arief:dibagi*(k.arief/100), ferry:dibagi*(k.ferry/100)+fFerry };
+  // Totals
+  const totPendapatan = mPay.reduce((s,p)=>s+(+p.nominal||0),0);
+  const totBankIn = totPendapatan; // Bank masuk = pendapatan (kecuali bunga)
+  const totBankOut = mExpBank.reduce((s,e)=>s+(+e.nominal||0),0) + mKasIn.reduce((s,k)=>s+(+k.jumlah||0),0) + mBagi.reduce((s,b)=>s+(+b.nominal||0),0);
+  const totKasIn = mKasIn.reduce((s,k)=>s+(+k.jumlah||0),0);
+  const totKasOut = mExpKas.reduce((s,e)=>s+(+e.nominal||0),0);
 
-  const byKat = mExp.reduce((a,e)=>{a[e.kategori]=(a[e.kategori]||0)+e.nominal;return a;},{});
+  const k = settings.kepemilikan || DEF.kepemilikan;
 
   const doPrint = () => {
-    const w = window.open("","_blank");
-    w.document.write(`<!DOCTYPE html><html><head><title>Laporan Kos Meruya – ${mLbl(month)}</title>
-    <style>body{font-family:sans-serif;max-width:800px;margin:30px auto;color:#1e293b}h1{color:#1d4ed8;margin-bottom:4px}h2{margin-top:24px;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:6px}table{width:100%;border-collapse:collapse;margin-bottom:16px}th,td{text-align:left;padding:8px 12px;border:1px solid #e2e8f0}th{background:#f8fafc;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}tr:nth-child(even){background:#f8fafc}.right{text-align:right}.green{color:#059669;font-weight:700}.red{color:#dc2626;font-weight:700}.big{font-size:20px;font-weight:900}</style>
-    </head><body>
-    <h1>🏠 Kos Meruya — Laporan Keuangan</h1><p style="color:#64748b">Periode: <strong>${mLbl(month)}</strong> · Dibuat: ${new Date().toLocaleDateString("id-ID")} · Occupancy: ${occ}%</p>
-    <h2>Ringkasan Keuangan</h2>
-    <table><tr><th>Item</th><th class="right">Nilai</th></tr>
-    <tr><td>Total Pendapatan Sewa</td><td class="right green">${fRp(totIn)}</td></tr>
-    <tr><td>Fee Pengelola (${fee}%)</td><td class="right red">– ${fRp(fFerry)}</td></tr>
-    <tr><td><strong>Total Dibagikan ke Investor</strong></td><td class="right big">${fRp(dibagi)}</td></tr></table>
-    <h2>Bagi Hasil Investor</h2>
-    <table><tr><th>Investor</th><th>Kepemilikan</th><th class="right">Jumlah</th></tr>
-    <tr><td>Ricy Candra</td><td>${k.ricy}%</td><td class="right">${fRp(bagian.ricy)}</td></tr>
-    <tr><td>Arief Wahyudi</td><td>${k.arief}%</td><td class="right">${fRp(bagian.arief)}</td></tr>
-    <tr><td>Ferry Lukas</td><td>${k.ferry}% + fee pengelola</td><td class="right">${fRp(bagian.ferry)}</td></tr></table>
-    <h2>Detail Pembayaran Sewa (${mPay.length} transaksi)</h2>
-    <table><tr><th>Kamar</th><th>Penyewa</th><th>Tgl Bayar</th><th>Metode</th><th class="right">Nominal</th></tr>
-    ${mPay.map(p=>{const r=rooms.find(x=>x.id===p.kamarId);const t=tenants.find(x=>x.id===p.penyewaId);return`<tr><td>K-${r?.nomor||"—"}</td><td>${t?.nama||"—"}</td><td>${fD(p.tanggal)}</td><td>${p.metode}</td><td class="right green">${fRp(p.nominal)}</td></tr>`;}).join("")}
-    <tr><td colspan="4"><strong>Total</strong></td><td class="right green big">${fRp(totIn)}</td></tr></table>
-    <h2>Detail Pengeluaran (${mExp.length} transaksi)</h2>
-    <table><tr><th>Tgl</th><th>Kategori</th><th>Deskripsi</th><th class="right">Nominal</th></tr>
-    ${mExp.map(e=>`<tr><td>${fD(e.tanggal)}</td><td>${e.kategori}</td><td>${e.deskripsi}</td><td class="right red">${fRp(e.nominal)}</td></tr>`).join("")}
-    <tr><td colspan="3"><strong>Total</strong></td><td class="right red big">${fRp(totEx)}</td></tr></table>
-    <p style="margin-top:40px;color:#94a3b8;font-size:12px">Dokumen ini digenerate otomatis oleh Sistem Manajemen Kos Meruya · ${new Date().toLocaleString("id-ID")}</p>
-    </body></html>`);
-    w.document.close(); w.print();
+    let title = "", body = "";
+    if (tab==="pendapatan") {
+      title = "Laporan Pendapatan";
+      body = `<h3>Total Pendapatan: ${fRp(totPendapatan)}</h3>
+      <table><tr><th>Kamar</th><th>Penyewa</th><th>Tanggal</th><th class="right">Nominal</th></tr>
+      ${mPay.map(p=>{const r=rooms.find(x=>x.id===p.kamarId);const t=tenants.find(x=>x.id===p.penyewaId);return `<tr><td>K-${r?.nomor||"?"}</td><td>${t?.nama||"?"}</td><td>${fD(p.tanggal)}</td><td class="right">${fRp(p.nominal)}</td></tr>`;}).join("")}
+      </table>`;
+    } else if (tab==="bank") {
+      title = "Laporan Bank";
+      body = `<h3>Masuk: ${fRp(totBankIn)} · Keluar: ${fRp(totBankOut)}</h3>
+      <table><tr><th>Tanggal</th><th>Deskripsi</th><th>Tipe</th><th class="right">Nominal</th></tr>
+      ${mPay.map(p=>{const t=tenants.find(x=>x.id===p.penyewaId);return `<tr><td>${fD(p.tanggal)}</td><td>Sewa ${t?.nama||"?"}</td><td>Masuk</td><td class="right green">${fRp(p.nominal)}</td></tr>`;}).join("")}
+      ${mExpBank.map(e=>`<tr><td>${fD(e.tanggal)}</td><td>${e.kategori}: ${e.deskripsi}</td><td>Keluar</td><td class="right red">- ${fRp(e.nominal)}</td></tr>`).join("")}
+      ${mKasIn.map(k=>`<tr><td>${fD(k.tanggal)}</td><td>Transfer ke Kas</td><td>Keluar</td><td class="right red">- ${fRp(k.jumlah)}</td></tr>`).join("")}
+      ${mBagi.map(b=>`<tr><td>${fD(b.tanggal)}</td><td>Bagi Hasil Investor</td><td>Keluar</td><td class="right red">- ${fRp(b.nominal)}</td></tr>`).join("")}
+      </table>`;
+    } else if (tab==="kas") {
+      title = "Laporan Kas";
+      body = `<h3>Masuk: ${fRp(totKasIn)} · Keluar: ${fRp(totKasOut)}</h3>
+      <table><tr><th>Tanggal</th><th>Deskripsi</th><th>Tipe</th><th class="right">Nominal</th></tr>
+      ${mKasIn.map(k=>`<tr><td>${fD(k.tanggal)}</td><td>Transfer dari Bank</td><td>Masuk</td><td class="right green">${fRp(k.jumlah)}</td></tr>`).join("")}
+      ${mExpKas.map(e=>`<tr><td>${fD(e.tanggal)}</td><td>${e.kategori}: ${e.deskripsi}</td><td>Keluar</td><td class="right red">- ${fRp(e.nominal)}</td></tr>`).join("")}
+      </table>`;
+    }
+    const html = `<!DOCTYPE html><html><head><title>${title} ${mLbl(month)}</title>
+      <style>body{font-family:Arial;padding:20px;}h1{font-size:18px;}h3{font-size:14px;margin-top:20px;}table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px;}th,td{padding:8px;border:1px solid #ddd;text-align:left;}.right{text-align:right;}.green{color:green;}.red{color:red;}</style>
+      </head><body><h1>${title} - ${mLbl(month)}</h1><p>${settings.companyInfo?.name||"Kos Meruya"}</p>${body}</body></html>`;
+    const w = window.open("","_blank"); w.document.write(html); w.document.close(); setTimeout(()=>w.print(),300);
   };
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div><h1 className="text-2xl font-black text-slate-900">Laporan Keuangan</h1>
-          <p className="text-slate-400 text-sm">{mLbl(month)}</p></div>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-black text-slate-900">Laporan Keuangan</h1><p className="text-slate-400 text-sm">{mLbl(month)}</p></div>
         <Btn v="secondary" onClick={doPrint}><Download size={16}/>Export / Cetak PDF</Btn>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <label className="text-sm font-bold text-slate-600">Periode:</label>
-        <select value={fBulan} onChange={e=>setFBulan(e.target.value)}
-          className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <select value={fBulan} onChange={e=>setFBulan(e.target.value)} className={inp}>
           {bulanList.map(b=><option key={b.v} value={b.v}>{b.l}</option>)}
         </select>
-        <select value={fTahun} onChange={e=>setFTahun(e.target.value)}
-          className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <select value={fTahun} onChange={e=>setFTahun(e.target.value)} className={inp}>
           {tahunList.map(t=><option key={t} value={t}>{t}</option>)}
         </select>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          {l:"Pendapatan",v:fRp(totIn),c:"emerald",s:`${mPay.length} pembayaran`},
-          {l:"Pengeluaran",v:fRp(totEx),c:"red",s:`${mExp.length} transaksi`},
-          {l:"Occupancy",v:`${occ}%`,c:"blue",s:`${rooms.filter(r=>r.status==="terisi").length}/${rooms.length} kamar`},
-          {l:"Total Dibagi",v:fRp(dibagi),c:"purple",s:"setelah potongan"},
-        ].map(s=>(
-          <Card key={s.l} className="p-5">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{s.l}</p>
-            <p className={`text-2xl font-black mt-2 text-${s.c}-600`}>{s.v}</p>
-            <p className="text-xs text-slate-400 mt-1">{s.s}</p>
-          </Card>
+      {/* Tabs */}
+      <div className="flex rounded-xl overflow-hidden border border-slate-200 w-fit">
+        {[["pendapatan","Pendapatan"],["bank","Bank"],["kas","Kas"]].map(([t,l])=>(
+          <button key={t} onClick={()=>setTab(t)} className={`px-5 py-2 text-sm font-bold transition-all ${tab===t?"bg-blue-600 text-white":"bg-white text-slate-600 hover:bg-slate-50"}`}>{l}</button>
         ))}
       </div>
 
-      <Card className="p-6">
-        <h2 className="font-black text-slate-900 mb-5">Kalkulasi Bagi Hasil</h2>
-        <div className="space-y-3 mb-6">
-          {[
-            ["Total Pendapatan Sewa",        "+"+fRp(totIn),       "text-emerald-600"],            [`Fee Pengelola Ferry (${fee}%)`, "–"+fRp(fFerry),      "text-red-500"],
-          ].map(([l,v,c])=>(
-            <div key={l} className="flex justify-between py-2.5 border-b border-slate-50">
-              <span className="text-sm text-slate-500">{l}</span>
-              <span className={`font-black ${c}`}>{v}</span>
+      {/* PENDAPATAN TAB */}
+      {tab==="pendapatan" && (
+        <>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+              <p className="text-xs font-bold text-slate-400 uppercase">Total Pendapatan Sewa</p>
+              <p className="text-2xl font-black text-emerald-600 mt-1">{fRp(totPendapatan)}</p>
+              <p className="text-xs text-slate-500 mt-1">{mPay.length} pembayaran</p>
             </div>
-          ))}
-          <div className="flex justify-between pt-1">
-            <span className="font-black text-slate-800">Total Dibagikan ke Investor</span>
-            <span className="font-black text-lg text-slate-900">{fRp(dibagi)}</span>
+            <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+              <p className="text-xs font-bold text-slate-400 uppercase">Occupancy</p>
+              <p className="text-2xl font-black text-blue-600 mt-1">{rooms.length>0?Math.round(tenants.filter(t=>t.aktif).length/rooms.length*100):0}%</p>
+              <p className="text-xs text-slate-500 mt-1">{tenants.filter(t=>t.aktif).length}/{rooms.length} kamar</p>
+            </div>
           </div>
-        </div>
-        <div className="grid grid-cols-3 gap-4">
-          {[{n:"Ricy Candra",key:"ricy",p:k.ricy},{n:"Arief Wahyudi",key:"arief",p:k.arief},{n:"Ferry Lukas",key:"ferry",p:k.ferry,fee:true}].map(inv=>(
-            <div key={inv.key} className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-5 text-center border border-blue-100">
-              <p className="font-black text-slate-800">{inv.n}</p>
-              <p className="text-xs text-slate-400 mt-0.5">{inv.p}%{inv.fee?<><br/><span className="text-blue-500">+ fee {fRp(fFerry)}</span></>:""}</p>
-              <p className="text-2xl font-black text-blue-700 mt-3">{fRp(bagian[inv.key])}</p>
-            </div>
-          ))}
-        </div>
-      </Card>
 
-      {Object.keys(byKat).length>0&&(
-        <Card className="p-6">
-          <h2 className="font-black text-slate-900 mb-4">Pengeluaran per Kategori</h2>
-          <div className="space-y-3">
-            {Object.entries(byKat).sort((a,b)=>b[1]-a[1]).map(([kat,val])=>(
-              <div key={kat} className="flex items-center gap-4">
-                <span className="text-sm text-slate-600 w-32 flex-shrink-0">{kat}</span>
-                <div className="flex-1 bg-slate-100 rounded-full h-2.5 overflow-hidden">
-                  <div className="bg-red-400 h-2.5 rounded-full transition-all" style={{width:`${totEx>0?Math.round(val/totEx*100):0}%`}}/>
-                </div>
-                <span className="text-sm font-black text-slate-700 w-36 text-right">{fRp(val)}</span>
-              </div>
-            ))}
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="border-b border-slate-100">{["Kamar","Penyewa","Tanggal","Nominal"].map(h=><th key={h} className="text-left px-5 py-3 text-xs font-bold text-slate-400 uppercase">{h}</th>)}</tr></thead>
+              <tbody>
+                {mPay.length===0&&<tr><td colSpan={4} className="text-center py-8 text-slate-400">Belum ada pendapatan {mLbl(month)}</td></tr>}
+                {mPay.map(p=>{const rm=rooms.find(r=>r.id===p.kamarId);const t=tenants.find(x=>x.id===p.penyewaId);return(
+                  <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50">
+                    <td className="px-5 py-3 font-black text-blue-600">K-{rm?.nomor||"?"}</td>
+                    <td className="px-5 py-3 font-bold">{t?.nama||"?"}</td>
+                    <td className="px-5 py-3 text-slate-500 text-xs">{fD(p.tanggal)}</td>
+                    <td className="px-5 py-3 font-bold text-emerald-600">{fRp(p.nominal)}</td>
+                  </tr>
+                );})}
+              </tbody>
+            </table>
           </div>
-        </Card>
+        </>
       )}
-      {/* Invoice activity log */}
-      {(() => {
-        const invLogs = (audit||[]).filter(a=>a.action==="INVOICE"||a.action==="INV_LUNAS").slice(0,20);
-        if (!invLogs.length) return null;
-        return (
-          <Card>
-            <div className="px-6 py-4 border-b border-slate-100">
-              <h2 className="font-black text-slate-900">Log Aktivitas Invoice</h2>
-              <p className="text-xs text-slate-400 mt-0.5">Siapa buat, siapa lunasin — tercatat semua</p>
+
+      {/* BANK TAB */}
+      {tab==="bank" && (
+        <>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+              <p className="text-xs font-bold text-slate-400 uppercase">Bank Masuk</p>
+              <p className="text-2xl font-black text-emerald-600 mt-1">+{fRp(totBankIn)}</p>
             </div>
-            <div className="divide-y divide-slate-50">
-              {invLogs.map(a=>(
-                <div key={a.id} className="flex items-start gap-3 px-6 py-3">
-                  <span className={`text-xs font-bold px-2.5 py-1 rounded-full flex-shrink-0 mt-0.5 ${a.action==="INV_LUNAS"?"bg-emerald-100 text-emerald-700":"bg-blue-100 text-blue-700"}`}>
-                    {a.action==="INV_LUNAS"?"✓ LUNAS":"DIBUAT"}
-                  </span>
-                  <div className="flex-1">
-                    <p className="text-sm text-slate-800">{a.detail}</p>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      <span className="font-bold">{a.by}</span> · {fD(a.at)} {new Date(a.at).toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit"})}
-                    </p>
-                  </div>
-                </div>
-              ))}
+            <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+              <p className="text-xs font-bold text-slate-400 uppercase">Bank Keluar</p>
+              <p className="text-2xl font-black text-red-600 mt-1">-{fRp(totBankOut)}</p>
             </div>
-          </Card>
-        );
-      })()}
+            <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+              <p className="text-xs font-bold text-slate-400 uppercase">Net</p>
+              <p className="text-2xl font-black text-slate-900 mt-1">{fRp(totBankIn-totBankOut)}</p>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="border-b border-slate-100">{["Tanggal","Deskripsi","Tipe","Nominal"].map(h=><th key={h} className="text-left px-5 py-3 text-xs font-bold text-slate-400 uppercase">{h}</th>)}</tr></thead>
+              <tbody>
+                {mPay.length===0&&mExpBank.length===0&&mKasIn.length===0&&mBagi.length===0&&<tr><td colSpan={4} className="text-center py-8 text-slate-400">Belum ada transaksi bank {mLbl(month)}</td></tr>}
+                {mPay.map(p=>{const t=tenants.find(x=>x.id===p.penyewaId);return(
+                  <tr key={p.id} className="border-b border-slate-50">
+                    <td className="px-5 py-3 text-slate-500 text-xs">{fD(p.tanggal)}</td>
+                    <td className="px-5 py-3">Sewa - {t?.nama||"?"}</td>
+                    <td className="px-5 py-3"><span className="text-xs font-bold px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full">↑ Masuk</span></td>
+                    <td className="px-5 py-3 font-bold text-emerald-600">+{fRp(p.nominal)}</td>
+                  </tr>
+                );})}
+                {mExpBank.map(e=>(
+                  <tr key={e.id} className="border-b border-slate-50">
+                    <td className="px-5 py-3 text-slate-500 text-xs">{fD(e.tanggal)}</td>
+                    <td className="px-5 py-3">{e.kategori}: {e.deskripsi}</td>
+                    <td className="px-5 py-3"><span className="text-xs font-bold px-2 py-0.5 bg-red-100 text-red-700 rounded-full">↓ Keluar</span></td>
+                    <td className="px-5 py-3 font-bold text-red-600">-{fRp(e.nominal)}</td>
+                  </tr>
+                ))}
+                {mKasIn.map(k=>(
+                  <tr key={k.id+"bb"} className="border-b border-slate-50">
+                    <td className="px-5 py-3 text-slate-500 text-xs">{fD(k.tanggal)}</td>
+                    <td className="px-5 py-3">Transfer ke Kas</td>
+                    <td className="px-5 py-3"><span className="text-xs font-bold px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full">↓ Keluar</span></td>
+                    <td className="px-5 py-3 font-bold text-amber-600">-{fRp(k.jumlah)}</td>
+                  </tr>
+                ))}
+                {mBagi.map(b=>(
+                  <tr key={b.id+"bh"} className="border-b border-slate-50">
+                    <td className="px-5 py-3 text-slate-500 text-xs">{fD(b.tanggal)}</td>
+                    <td className="px-5 py-3 font-bold">Bagi Hasil Investor</td>
+                    <td className="px-5 py-3"><span className="text-xs font-bold px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full">↓ Keluar</span></td>
+                    <td className="px-5 py-3 font-bold text-purple-600">-{fRp(b.nominal)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {/* KAS TAB */}
+      {tab==="kas" && (
+        <>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+              <p className="text-xs font-bold text-slate-400 uppercase">Kas Masuk</p>
+              <p className="text-2xl font-black text-emerald-600 mt-1">+{fRp(totKasIn)}</p>
+            </div>
+            <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+              <p className="text-xs font-bold text-slate-400 uppercase">Kas Keluar</p>
+              <p className="text-2xl font-black text-red-600 mt-1">-{fRp(totKasOut)}</p>
+            </div>
+            <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+              <p className="text-xs font-bold text-slate-400 uppercase">Net</p>
+              <p className="text-2xl font-black text-slate-900 mt-1">{fRp(totKasIn-totKasOut)}</p>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="border-b border-slate-100">{["Tanggal","Deskripsi","Tipe","Nominal"].map(h=><th key={h} className="text-left px-5 py-3 text-xs font-bold text-slate-400 uppercase">{h}</th>)}</tr></thead>
+              <tbody>
+                {mKasIn.length===0&&mExpKas.length===0&&<tr><td colSpan={4} className="text-center py-8 text-slate-400">Belum ada transaksi kas {mLbl(month)}</td></tr>}
+                {mKasIn.map(k=>(
+                  <tr key={k.id} className="border-b border-slate-50">
+                    <td className="px-5 py-3 text-slate-500 text-xs">{fD(k.tanggal)}</td>
+                    <td className="px-5 py-3">Transfer dari Bank</td>
+                    <td className="px-5 py-3"><span className="text-xs font-bold px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full">↑ Masuk</span></td>
+                    <td className="px-5 py-3 font-bold text-emerald-600">+{fRp(k.jumlah)}</td>
+                  </tr>
+                ))}
+                {mExpKas.map(e=>(
+                  <tr key={e.id} className="border-b border-slate-50">
+                    <td className="px-5 py-3 text-slate-500 text-xs">{fD(e.tanggal)}</td>
+                    <td className="px-5 py-3">{e.kategori}: {e.deskripsi}</td>
+                    <td className="px-5 py-3"><span className="text-xs font-bold px-2 py-0.5 bg-red-100 text-red-700 rounded-full">↓ Keluar</span></td>
+                    <td className="px-5 py-3 font-bold text-red-600">-{fRp(e.nominal)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </div>
   );
 }
+
 // ═══════════════════════════════════════════════
 function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, saveRooms }) {
   const [form, setForm]    = useState({...settings, kepemilikan:{...settings.kepemilikan}});
@@ -2143,7 +2208,161 @@ function StatusBayarPage({ rooms, tenants, payments }) {
   );
 }
 
-function MutasiBankKasPage({ settings, saveSettings, payments, expenses, rooms, tenants, addAudit, user, role, kasTx, saveKas }) {
+
+function BagiHasilPage({ settings, payments, expenses, kasTx, bagiHasil, saveBagiHasil, addAudit, user }) {
+  const [nominal, setNominal] = useState("");
+  const fRp = (n)=>"Rp "+Math.round(n||0).toLocaleString("id-ID");
+  const fD = (d)=>d?new Date(d).toLocaleDateString("id-ID",{day:"2-digit",month:"long",year:"numeric"}):"-";
+  const inp = "w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
+
+  // Calculate current bank balance
+  const totMasuk = payments.reduce((s,p)=>s+(+p.nominal||0),0);
+  const totExpenseBank = expenses.filter(e=>e.status==="approved"&&e.sumber==="bank").reduce((s,e)=>s+(+e.nominal||0),0);
+  const totTransferKas = (kasTx||[]).filter(k=>k.tipe==="masuk").reduce((s,k)=>s+(+k.jumlah||0),0);
+  const totBagiHasil = (bagiHasil||[]).reduce((s,b)=>s+(+b.nominal||0),0);
+  const saldoAwalBank = +(settings.saldoAwal?.jumlah)||0;
+  const saldoBank = saldoAwalBank + totMasuk - totExpenseBank - totTransferKas - totBagiHasil;
+
+  const k = settings.kepemilikan || DEF.kepemilikan;
+  const fee = settings.feeManager || 10;
+  const nom = +nominal||0;
+  const feeFerry = nom * (fee/100);
+  const sisa = nom - feeFerry;
+  const distribusi = {
+    ricy: sisa * (k.ricy/100),
+    arief: sisa * (k.arief/100),
+    ferry: sisa * (k.ferry/100) + feeFerry,
+  };
+
+  const eksekusi = async () => {
+    if (!nom || nom <= 0) return alert("Masukkan nominal yang akan dibagi");
+    if (nom > saldoBank) return alert(`Saldo Bank tidak cukup. Saldo: ${fRp(saldoBank)}`);
+    if (!confirm(`Eksekusi bagi hasil ${fRp(nom)}?\n\nFee Pengelola Ferry (${fee}%): ${fRp(feeFerry)}\n\nRicy: ${fRp(distribusi.ricy)}\nArief: ${fRp(distribusi.arief)}\nFerry: ${fRp(distribusi.ferry)}\n\nSaldo Bank akan berkurang ${fRp(nom)}`)) return;
+    const entry = {
+      id: Math.random().toString(36).substr(2)+Date.now().toString(36),
+      tanggal: new Date().toISOString().split("T")[0],
+      nominal: nom,
+      fee: feeFerry,
+      feePercent: fee,
+      distribusi,
+      kepemilikan: {...k},
+      inputBy: user,
+      inputAt: new Date().toISOString(),
+    };
+    await saveBagiHasil([entry, ...(bagiHasil||[])]);
+    await addAudit("BAGI_HASIL", `Bagi hasil ${fRp(nom)} dieksekusi - Ricy: ${fRp(distribusi.ricy)}, Arief: ${fRp(distribusi.arief)}, Ferry: ${fRp(distribusi.ferry)}`);
+    setNominal("");
+    alert("✅ Bagi hasil berhasil dieksekusi!");
+  };
+
+  const batalkan = async (entry) => {
+    if (!confirm(`Batalkan bagi hasil ${fRp(entry.nominal)} tanggal ${fD(entry.tanggal)}?\nSaldo Bank akan kembali bertambah.`)) return;
+    await saveBagiHasil((bagiHasil||[]).filter(b=>b.id!==entry.id));
+    await addAudit("BAGI_HASIL_BATAL", `Bagi hasil ${fRp(entry.nominal)} tanggal ${fD(entry.tanggal)} dibatalkan`);
+  };
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-2xl font-black text-slate-900">Bagi Hasil</h1>
+        <p className="text-slate-400 text-sm">Distribusi keuntungan ke investor</p>
+      </div>
+
+      {/* Saldo Bank */}
+      <div className="bg-gradient-to-br from-blue-600 to-indigo-600 rounded-2xl p-6 text-white shadow-lg">
+        <p className="text-blue-100 text-sm font-bold uppercase tracking-wider mb-1">Saldo Bank Saat Ini</p>
+        <p className="text-4xl font-black">{fRp(saldoBank)}</p>
+        <p className="text-blue-200 text-xs mt-2">Tersedia untuk dibagi</p>
+      </div>
+
+      {/* Input nominal */}
+      <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
+        <h2 className="font-black text-slate-900 mb-4">Eksekusi Bagi Hasil Baru</h2>
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs font-bold text-slate-600 block mb-2">Nominal yang Dibagi</label>
+            <input type="number" value={nominal} onChange={e=>setNominal(e.target.value)} placeholder="Contoh: 35000000"
+              className={inp}/>
+            <div className="flex gap-2 mt-2">
+              {[5000000,10000000,20000000,30000000,saldoBank].filter(v=>v>0&&v<=saldoBank).map(v=>(
+                <button key={v} onClick={()=>setNominal(String(v))} className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg">
+                  {v===saldoBank?"Maks":fRp(v)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {nom > 0 && (
+            <div className="bg-slate-50 rounded-xl p-4 space-y-2">
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Preview Distribusi</p>
+              <div className="flex justify-between text-sm pb-2 border-b border-slate-200">
+                <span className="text-slate-600">Fee Pengelola Ferry ({fee}%)</span>
+                <span className="font-bold text-amber-600">{fRp(feeFerry)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-700">Ricy Candra ({k.ricy}%)</span>
+                <span className="font-black text-slate-900">{fRp(distribusi.ricy)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-700">Arief Wahyudi ({k.arief}%)</span>
+                <span className="font-black text-slate-900">{fRp(distribusi.arief)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-700">Ferry Lukas ({k.ferry}% + fee)</span>
+                <span className="font-black text-slate-900">{fRp(distribusi.ferry)}</span>
+              </div>
+              <div className="flex justify-between text-sm pt-2 border-t border-slate-200">
+                <span className="font-black text-slate-900">Total Dibagi</span>
+                <span className="font-black text-blue-600">{fRp(nom)}</span>
+              </div>
+              <div className="flex justify-between text-xs pt-1 text-slate-500">
+                <span>Saldo Bank setelah bagi hasil</span>
+                <span className="font-bold">{fRp(saldoBank - nom)}</span>
+              </div>
+            </div>
+          )}
+
+          <button onClick={eksekusi} disabled={!nom||nom<=0||nom>saldoBank}
+            className="w-full px-5 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-black rounded-xl transition">
+            Eksekusi Bagi Hasil
+          </button>
+        </div>
+      </div>
+
+      {/* Riwayat */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <h2 className="font-black text-slate-900">Riwayat Bagi Hasil</h2>
+          <span className="text-xs font-bold text-slate-400">{(bagiHasil||[]).length} transaksi</span>
+        </div>
+        {(!bagiHasil||bagiHasil.length===0)?(
+          <p className="text-center py-10 text-slate-400 text-sm">Belum ada bagi hasil</p>
+        ):(
+          <div className="divide-y divide-slate-100">
+            {bagiHasil.map(b=>(
+              <div key={b.id} className="px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition">
+                <div>
+                  <p className="font-black text-slate-900">{fRp(b.nominal)}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">{fD(b.tanggal)} · oleh {b.inputBy}</p>
+                  <div className="flex gap-3 mt-2 text-xs text-slate-500">
+                    <span>Ricy: <span className="font-bold text-slate-700">{fRp(b.distribusi?.ricy||0)}</span></span>
+                    <span>Arief: <span className="font-bold text-slate-700">{fRp(b.distribusi?.arief||0)}</span></span>
+                    <span>Ferry: <span className="font-bold text-slate-700">{fRp(b.distribusi?.ferry||0)}</span></span>
+                  </div>
+                </div>
+                <button onClick={()=>batalkan(b)} className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold rounded-xl transition">
+                  Batalkan
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MutasiBankKasPage({ settings, saveSettings, payments, expenses, rooms, tenants, addAudit, user, role, kasTx, saveKas, bagiHasil }) {
   const [tab,setTab]=useState("bank");
   const [fMonth,setFMonth]=useState("");
   const ms=Array.from({length:6},(_,i)=>{const d=new Date();d.setMonth(d.getMonth()-i);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;});
@@ -2153,7 +2372,8 @@ function MutasiBankKasPage({ settings, saveSettings, payments, expenses, rooms, 
 
   const bankIn=payments.map(p=>{const rm=rooms.find(r=>r.id===p.kamarId);const t=tenants.find(x=>x.id===p.penyewaId);return{id:p.id,tanggal:p.tanggal,tipe:"masuk",jumlah:+p.nominal,desc:`Sewa K-${rm?.nomor||"?"} - ${t?.nama||"?"}`,periode:p.periode};});
   const bankOut=[...expenses.filter(e=>e.status==="approved"&&e.sumber==="bank").map(e=>({id:e.id,tanggal:e.tanggal,tipe:"keluar",jumlah:+e.nominal,desc:`${e.kategori}: ${e.deskripsi}`})),
-    ...(kasTx||[]).filter(k=>k.tipe==="masuk").map(k=>({id:k.id+"b",tanggal:k.tanggal,tipe:"keluar",jumlah:+k.jumlah,desc:"Transfer ke Kas"}))];
+    ...(kasTx||[]).filter(k=>k.tipe==="masuk").map(k=>({id:k.id+"b",tanggal:k.tanggal,tipe:"keluar",jumlah:+k.jumlah,desc:"Transfer ke Kas"})),
+    ...(bagiHasil||[]).map(b=>({id:b.id+"bh",tanggal:b.tanggal,tipe:"keluar",jumlah:+b.nominal,desc:"Bagi Hasil Investor"}))];
   const kasIn=(kasTx||[]).filter(k=>k.tipe==="masuk");
   const kasOut=expenses.filter(e=>e.status==="approved"&&(e.sumber==="kas"||!e.sumber)).map(e=>({id:e.id,tanggal:e.tanggal,tipe:"keluar",jumlah:+e.nominal,desc:`${e.kategori}: ${e.deskripsi}`}));
 
@@ -2229,6 +2449,7 @@ export default function App() {
   const [users,   setUsers]   = useState(DEF_USERS);
   const [kasTx,   setKasTx]   = useState([]);
   const [iv,      setIV]      = useState(null);
+  const [bagiHasil,setBagiHasil]= useState([]);
 
   // Load data in background (never blocks UI)
   useEffect(()=>{
@@ -2242,13 +2463,14 @@ export default function App() {
       try{
         const sRaw=await store.get(SK.S); const s=(sRaw&&typeof sRaw==="object")?sRaw:(typeof sRaw==="string"?JSON.parse(sRaw):null); if(s)setSettings(s);
         const rRaw=await store.get(SK.R); const r=toArr(rRaw); if(r&&r.length>0)setRooms(r); else{const nr=mkRooms();setRooms(nr);store.set(SK.R,nr);}
-        const res=await Promise.allSettled([store.get(SK.T),store.get(SK.P),store.get(SK.E),store.get(SK.A),store.get("km-users"),store.get(SK.K)]);
+        const res=await Promise.allSettled([store.get(SK.T),store.get(SK.P),store.get(SK.E),store.get(SK.A),store.get("km-users"),store.get(SK.K),store.get(SK.BH)]);
         const t=toArr(res[0].value); if(t)setTenants(t);
         const p=toArr(res[1].value); if(p)setPayments(p);
         const e=toArr(res[2].value); if(e)setExpenses(e);
         const a=toArr(res[3].value); if(a)setAudit(a);
         const u=toArr(res[4].value); if(u?.length)setUsers(u);
         const k=toArr(res[5].value); if(k)setKasTx(k);
+        const bh=toArr(res[6].value); if(bh)setBagiHasil(bh);
       }catch(e){console.error(e);}
     })();
   },[]);
@@ -2287,9 +2509,10 @@ export default function App() {
     }
   };
 
-  const ctx={role,user,settings,rooms,tenants,payments,expenses,audit,users,kasTx,
+  const saveBagiHasil = async (d)=>{setBagiHasil(d); await store.set(SK.BH,d);};
+  const ctx={role,user,settings,rooms,tenants,payments,expenses,audit,users,kasTx,bagiHasil,
     saveSettings:save.settings,saveRooms:save.rooms,saveTenants:save.tenants,
-    savePayments:save.payments,saveExpenses:save.expenses,addAudit,saveUsers,saveKas};
+    savePayments:save.payments,saveExpenses:save.expenses,addAudit,saveUsers,saveKas,saveBagiHasil};
 
   // Invoice view
 
@@ -2310,6 +2533,7 @@ export default function App() {
       {page==="invoices"  && <InvoicesPage {...ctx}/>}
       {page==="status"    && <StatusBayarPage {...ctx}/>}
       {page==="mutasi"    && (role==="admin"||role==="investor") && <MutasiBankKasPage {...ctx}/>}
+      {page==="bagihasil" && role==="admin" && <BagiHasilPage {...ctx}/>}
       {page==="reports"   && (role==="admin"||role==="investor") && <ReportsPage {...ctx}/>}
       {page==="settings"  && role==="admin" && <SettingsPage {...ctx} onReset={resetData}/>}
       {page==="audit"     && (role==="admin"||role==="investor") && <AuditPage {...ctx}/>}
