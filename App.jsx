@@ -571,21 +571,38 @@ function TenantsPage({ role, rooms, tenants, saveTenants, saveRooms, addAudit })
         <input className={inp+" pl-10"} placeholder="Cari nama atau HP..." value={search} onChange={e=>setSearch(e.target.value)}/>
       </div>
 
+      {/* Filter & Sort bar */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex rounded-xl overflow-hidden border border-slate-200">
+          <button onClick={()=>setShowAlumni(false)} className={`px-4 py-2 text-sm font-bold transition-all ${!showAlumni?"bg-blue-600 text-white":"bg-white text-slate-600"}`}>Aktif ({tenants.filter(t=>t.aktif).length})</button>
+          <button onClick={()=>setShowAlumni(true)} className={`px-4 py-2 text-sm font-bold transition-all ${showAlumni?"bg-blue-600 text-white":"bg-white text-slate-600"}`}>Alumni ({tenants.filter(t=>!t.aktif).length})</button>
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-sm font-bold text-slate-600">Urutkan:</label>
+          <select value={sortBy} onChange={e=>setSortBy(e.target.value)} className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none">
+            <option value="nama">Nama A-Z</option>
+            <option value="kamar">Nomor Kamar</option>
+            <option value="lantai">Lantai</option>
+          </select>
+        </div>
+      </div>
+
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="border-b border-slate-100">
-              {["Kamar","Nama","HP","Masuk","JT","Deposit","Status",""].map(h=>(
+              {["Kamar","Lantai","Nama","HP","Masuk","JT","Deposit","Status",""].map(h=>(
                 <th key={h} className="text-left px-5 py-3.5 text-xs font-bold text-slate-400 uppercase tracking-widest">{h}</th>
               ))}
             </tr></thead>
             <tbody>
-              {filtered.length===0&&<tr><td colSpan={8} className="text-center py-10 text-slate-400 text-sm">Belum ada data penyewa</td></tr>}
+              {filtered.length===0&&<tr><td colSpan={9} className="text-center py-10 text-slate-400 text-sm">Belum ada data penyewa</td></tr>}
               {filtered.map(t=>{
                 const room=rooms.find(r=>r.id===t.kamarId);
                 return (
                   <tr key={t.id} className="border-b border-slate-50 hover:bg-slate-50/80 transition">
                     <td className="px-5 py-3.5 font-black text-blue-600">K-{room?.nomor||"—"}</td>
+                    <td className="px-5 py-3.5 text-slate-500 text-sm">Lt {room?.lantai||"—"}</td>
                     <td className="px-5 py-3.5 font-bold text-slate-800">{t.nama}</td>
                     <td className="px-5 py-3.5 text-slate-500">{t.hp||"—"}</td>
                     <td className="px-5 py-3.5 text-slate-500">{fD(t.tanggalMasuk)}</td>
