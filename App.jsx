@@ -14,6 +14,15 @@ const store={
 };
 
 const SK={S:"km-settings",R:"km-rooms",T:"km-tenants",P:"km-payments",E:"km-expenses",A:"km-audit",K:"km-kas"};
+
+// Firebase sometimes returns objects instead of arrays — always convert
+const toArr=(v)=>{
+  if(!v) return null;
+  if(Array.isArray(v)) return v;
+  if(typeof v==="string"){try{const p=JSON.parse(v);return Array.isArray(p)?p:null;}catch{return null;}}
+  if(typeof v==="object") return Object.values(v);
+  return null;
+};
 // Read session synchronously — prevents React DOM reconciliation errors
 const _sess = (()=>{
   try{const s=localStorage.getItem("km-session");if(s){const{u,r}=JSON.parse(s);if(u&&r)return{u,r};}}catch{}
@@ -2092,15 +2101,15 @@ export default function App() {
     }
     (async()=>{
       try{
-        const s=await store.get(SK.S); if(s)setSettings(s);
-        const r=await store.get(SK.R); if(r&&r.length>0)setRooms(r); else{const nr=mkRooms();setRooms(nr);store.set(SK.R,nr);}
+        const sRaw=await store.get(SK.S); const s=(sRaw&&typeof sRaw==="object")?sRaw:(typeof sRaw==="string"?JSON.parse(sRaw):null); if(s)setSettings(s);
+        const rRaw=await store.get(SK.R); const r=toArr(rRaw); if(r&&r.length>0)setRooms(r); else{const nr=mkRooms();setRooms(nr);store.set(SK.R,nr);}
         const res=await Promise.allSettled([store.get(SK.T),store.get(SK.P),store.get(SK.E),store.get(SK.A),store.get("km-users"),store.get(SK.K)]);
-        if(res[0].value)setTenants(res[0].value);
-        if(res[1].value)setPayments(res[1].value);
-        if(res[2].value)setExpenses(res[2].value);
-        if(res[3].value)setAudit(res[3].value);
-        if(res[4].value?.length)setUsers(res[4].value);
-        if(res[5].value)setKasTx(res[5].value);
+        const t=toArr(res[0].value); if(t)setTenants(t);
+        const p=toArr(res[1].value); if(p)setPayments(p);
+        const e=toArr(res[2].value); if(e)setExpenses(e);
+        const a=toArr(res[3].value); if(a)setAudit(a);
+        const u=toArr(res[4].value); if(u?.length)setUsers(u);
+        const k=toArr(res[5].value); if(k)setKasTx(k);
       }catch(e){console.error(e);}
     })();
   },[]);
