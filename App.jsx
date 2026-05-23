@@ -922,7 +922,7 @@ function ExpensesPage({ role, user, expenses, saveExpenses, addAudit }) {
 // ═══════════════════════════════════════════════
 // REPORTS PAGE
 // ═══════════════════════════════════════════════
-function ReportsPage({ rooms, tenants, payments, expenses, settings }) {
+function ReportsPage({ rooms, tenants, payments, expenses, settings, audit }) {
   const [month, setMonth] = useState(tMon());
   const ms = months6().concat(Array.from({length:6},(_,i)=>{ const d=new Date(); d.setMonth(d.getMonth()-6-i); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; }));
 
