@@ -521,9 +521,19 @@ function TenantsPage({ role, rooms, tenants, saveTenants, saveRooms, addAudit })
   const [search,  setSearch] = useState("");
   const [coModal, setCoModal]= useState(null);
   const [coForm,  setCoForm] = useState({dikembalikan:0,catatan:""});
+  const [showAlumni, setShowAlumni] = useState(false);
+  const [sortBy, setSortBy] = useState("nama");
   const isEdit = role==="admin"||role==="staff";
 
-  const filtered = tenants.filter(t=>!search||t.nama?.toLowerCase().includes(search.toLowerCase())||t.hp?.includes(search));
+  const filtered = tenants
+    .filter(t=>showAlumni ? !t.aktif : t.aktif)
+    .filter(t=>!search||t.nama?.toLowerCase().includes(search.toLowerCase())||t.hp?.includes(search))
+    .sort((a,b)=>{
+      if(sortBy==="nama") return (a.nama||"").localeCompare(b.nama||"");
+      if(sortBy==="kamar"){const ra=rooms.find(r=>r.id===a.kamarId);const rb=rooms.find(r=>r.id===b.kamarId);return (ra?.nomor||0)-(rb?.nomor||0);}
+      if(sortBy==="lantai"){const ra=rooms.find(r=>r.id===a.kamarId);const rb=rooms.find(r=>r.id===b.kamarId);return (ra?.lantai||0)-(rb?.lantai||0);}
+      return 0;
+    });
 
   const openAdd = () => {
     setForm({nama:"",hp:"",ktp:"",kontakDarurat:"",kontakDaruratHp:"",kamarId:"",
