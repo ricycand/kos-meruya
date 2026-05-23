@@ -964,10 +964,12 @@ function ExpensesPage({ role, user, expenses, saveExpenses, addAudit }) {
 // REPORTS PAGE
 // ═══════════════════════════════════════════════
 function ReportsPage({ rooms, tenants, payments, expenses, settings, audit }) {
-  const [month, setMonth] = useState(tMon());
-  const ms = months6().concat(Array.from({length:6},(_,i)=>{ const d=new Date(); d.setMonth(d.getMonth()-6-i); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; }));
+  const [fBulan, setFBulan] = useState(String(new Date().getMonth()+1).padStart(2,"0"));
+  const [fTahun, setFTahun] = useState(String(new Date().getFullYear()));
+  const month = `${fTahun}-${fBulan}`;
+  const bulanList = [{v:"01",l:"Januari"},{v:"02",l:"Februari"},{v:"03",l:"Maret"},{v:"04",l:"April"},{v:"05",l:"Mei"},{v:"06",l:"Juni"},{v:"07",l:"Juli"},{v:"08",l:"Agustus"},{v:"09",l:"September"},{v:"10",l:"Oktober"},{v:"11",l:"November"},{v:"12",l:"Desember"}];
+  const tahunList = Array.from({length:3},(_,i)=>String(new Date().getFullYear()-i));
 
-  const mPay  = payments.filter(p=>p.periode===month);
   const mExp  = expenses.filter(e=>e.periode===month&&e.status==="approved");
   const totIn = mPay.reduce((s,p)=>s+p.nominal,0);
   const totEx = mExp.reduce((s,e)=>s+e.nominal,0);
@@ -976,7 +978,7 @@ function ReportsPage({ rooms, tenants, payments, expenses, settings, audit }) {
   const kas   = settings.kasOperasional||10000000;
   const fee   = settings.feeManager||10;
   const k     = settings.kepemilikan||DEF.kepemilikan;
-  const bersih= Math.max(0,totIn-kas);
+  const bersih= totIn;
   const fFerry= bersih*(fee/100);
   const dibagi= bersih-fFerry;
   const bagian= { ricy:dibagi*(k.ricy/100), arief:dibagi*(k.arief/100), ferry:dibagi*(k.ferry/100)+fFerry };
@@ -992,7 +994,6 @@ function ReportsPage({ rooms, tenants, payments, expenses, settings, audit }) {
     <h2>Ringkasan Keuangan</h2>
     <table><tr><th>Item</th><th class="right">Nilai</th></tr>
     <tr><td>Total Pendapatan Sewa</td><td class="right green">${fRp(totIn)}</td></tr>
-    <tr><td>Kas Operasional Disisihkan</td><td class="right red">– ${fRp(kas)}</td></tr>
     <tr><td>Fee Pengelola (${fee}%)</td><td class="right red">– ${fRp(fFerry)}</td></tr>
     <tr><td><strong>Total Dibagikan ke Investor</strong></td><td class="right big">${fRp(dibagi)}</td></tr></table>
     <h2>Bagi Hasil Investor</h2>
@@ -1021,13 +1022,16 @@ function ReportsPage({ rooms, tenants, payments, expenses, settings, audit }) {
         <Btn v="secondary" onClick={doPrint}><Download size={16}/>Export / Cetak PDF</Btn>
       </div>
 
-      <div className="flex gap-2 flex-wrap">
-        {ms.slice(0,12).map(m=>(
-          <button key={m} onClick={()=>setMonth(m)}
-            className={`px-4 py-1.5 rounded-xl text-sm font-semibold transition-all ${month===m?"bg-blue-600 text-white shadow-sm":"bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-            {mLbl(m)}
-          </button>
-        ))}
+      <div className="flex items-center gap-3">
+        <label className="text-sm font-bold text-slate-600">Periode:</label>
+        <select value={fBulan} onChange={e=>setFBulan(e.target.value)}
+          className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          {bulanList.map(b=><option key={b.v} value={b.v}>{b.l}</option>)}
+        </select>
+        <select value={fTahun} onChange={e=>setFTahun(e.target.value)}
+          className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          {tahunList.map(t=><option key={t} value={t}>{t}</option>)}
+        </select>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1049,9 +1053,7 @@ function ReportsPage({ rooms, tenants, payments, expenses, settings, audit }) {
         <h2 className="font-black text-slate-900 mb-5">Kalkulasi Bagi Hasil</h2>
         <div className="space-y-3 mb-6">
           {[
-            ["Total Pendapatan Sewa",        "+"+fRp(totIn),       "text-emerald-600"],
-            [`Kas Operasional Disisihkan`,    "–"+fRp(kas),         "text-red-500"],
-            [`Fee Pengelola Ferry (${fee}%)`, "–"+fRp(fFerry),      "text-red-500"],
+            ["Total Pendapatan Sewa",        "+"+fRp(totIn),       "text-emerald-600"],            [`Fee Pengelola Ferry (${fee}%)`, "–"+fRp(fFerry),      "text-red-500"],
           ].map(([l,v,c])=>(
             <div key={l} className="flex justify-between py-2.5 border-b border-slate-50">
               <span className="text-sm text-slate-500">{l}</span>
