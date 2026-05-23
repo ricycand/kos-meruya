@@ -1698,6 +1698,14 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
     setShowWA({ inv, msg: genWAMsg(inv) });
   };
 
+  const cancelInvoice = async (inv) => {
+    if (!confirm(`Batalkan invoice ${inv.invoiceNo} untuk ${inv.tenantName}?\nInvoice akan dihapus permanen.`)) return;
+    const updated = invoices.filter(i=>i.id!==inv.id);
+    await saveInvs(updated);
+    await store.set(`km-inv-${inv.id}`, null);
+    await addAudit("INV_BATAL", `Invoice ${inv.invoiceNo} - ${inv.tenantName} dibatalkan oleh ${user}`);
+  };
+
   const markPaid = async (inv) => {
     const updated = invoices.map(i=>i.id===inv.id?{...i,paid:true,paidAt:now(),paidBy:user}:i);
     await saveInvs(updated);
@@ -1863,6 +1871,9 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
                   <span className="font-black text-slate-800">{fRp(inv.nominal)}</span>
                   {!inv.paid&&isEdit&&(
                     <button onClick={()=>markPaid(inv)} className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold rounded-xl transition">✓ Lunas</button>
+                  )}
+                  {!inv.paid&&isEdit&&(
+                    <button onClick={()=>cancelInvoice(inv)} className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold rounded-xl transition">✕ Batal</button>
                   )}
                   <button onClick={()=>printInvoice(inv)}
                     className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5">
