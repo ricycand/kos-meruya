@@ -1757,6 +1757,52 @@ ${generated.join(", ")}`);
   const ms = months6();
   const noBank = !settings.bankAccounts?.length;
 
+  if (multiModal) {
+    const room = rooms.find(r=>r.id===multiModal.kamarId);
+    const months = Array.from({length:multiMonths},(_,i)=>{
+      const today=new Date(); const d=new Date(today.getFullYear(),today.getMonth()+i,1);
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+    });
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+          <h2 className="text-xl font-black text-slate-900 mb-1">Buat Invoice Multi Bulan</h2>
+          <p className="text-slate-500 text-sm mb-5">{multiModal.nama} · Kamar {room?.nomor} · {fRp(room?.harga||0)}/bln</p>
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs font-bold text-slate-600 block mb-2">Jumlah Bulan</label>
+              <div className="flex gap-2">
+                {[1,2,3,6,12].map(n=>(
+                  <button key={n} onClick={()=>setMultiMonths(n)}
+                    className={`px-4 py-2 rounded-xl text-sm font-bold border transition ${multiMonths===n?"bg-blue-600 text-white border-blue-600":"bg-white text-slate-600 border-slate-200 hover:bg-slate-50"}`}>
+                    {n} bln
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="bg-slate-50 rounded-xl p-4">
+              <p className="text-xs font-bold text-slate-500 mb-2">Invoice yang akan dibuat:</p>
+              {months.map(m=>(
+                <div key={m} className="flex justify-between text-sm py-1 border-b border-slate-100 last:border-0">
+                  <span className="text-slate-700">{mLbl(m)}</span>
+                  <span className="font-bold text-slate-900">{fRp(room?.harga||0)}</span>
+                </div>
+              ))}
+              <div className="flex justify-between text-sm pt-2 font-black">
+                <span>Total {multiMonths} bulan</span>
+                <span className="text-blue-600">{fRp((room?.harga||0)*multiMonths)}</span>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button onClick={()=>setMultiModal(null)} className="px-4 py-2 bg-slate-100 text-slate-700 font-bold rounded-xl text-sm">Batal</button>
+              <button onClick={generateMulti} className="px-4 py-2 bg-blue-600 text-white font-bold rounded-xl text-sm">Generate {multiMonths} Invoice</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
 
@@ -2247,53 +2293,6 @@ export default function App() {
     savePayments:save.payments,saveExpenses:save.expenses,addAudit,saveUsers,saveKas};
 
   // Invoice view
-  // Multi-month invoice modal
-  if (multiModal) {
-    const room = rooms.find(r=>r.id===multiModal.kamarId);
-    const months = Array.from({length:multiMonths},(_,i)=>{
-      const today=new Date(); const d=new Date(today.getFullYear(),today.getMonth()+i,1);
-      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
-    });
-    return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
-          <h2 className="text-xl font-black text-slate-900 mb-1">Buat Invoice Multi Bulan</h2>
-          <p className="text-slate-500 text-sm mb-5">{multiModal.nama} · Kamar {room?.nomor} · {fRp(room?.harga||0)}/bln</p>
-          <div className="space-y-4">
-            <div>
-              <label className="text-xs font-bold text-slate-600 block mb-2">Jumlah Bulan</label>
-              <div className="flex gap-2">
-                {[1,2,3,6,12].map(n=>(
-                  <button key={n} onClick={()=>setMultiMonths(n)}
-                    className={`px-4 py-2 rounded-xl text-sm font-bold border transition ${multiMonths===n?"bg-blue-600 text-white border-blue-600":"bg-white text-slate-600 border-slate-200 hover:bg-slate-50"}`}>
-                    {n} bln
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="bg-slate-50 rounded-xl p-4">
-              <p className="text-xs font-bold text-slate-500 mb-2">Invoice yang akan dibuat:</p>
-              {months.map(m=>(
-                <div key={m} className="flex justify-between text-sm py-1 border-b border-slate-100 last:border-0">
-                  <span className="text-slate-700">{mLbl(m)}</span>
-                  <span className="font-bold text-slate-900">{fRp(room?.harga||0)}</span>
-                </div>
-              ))}
-              <div className="flex justify-between text-sm pt-2 font-black">
-                <span>Total {multiMonths} bulan</span>
-                <span className="text-blue-600">{fRp((room?.harga||0)*multiMonths)}</span>
-              </div>
-            </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button onClick={()=>setMultiModal(null)} className="px-4 py-2 bg-slate-100 text-slate-700 font-bold rounded-xl text-sm">Batal</button>
-              <button onClick={generateMulti} className="px-4 py-2 bg-blue-600 text-white font-bold rounded-xl text-sm">Generate {multiMonths} Invoice</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
 
   if(iv) return <InvoicePublicView inv={iv==="notfound"?null:iv}/>;
 
