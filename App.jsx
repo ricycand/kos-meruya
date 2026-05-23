@@ -69,7 +69,7 @@ function Btn({ v="primary", onClick, children, disabled, full, size="md" }) {
     success:"bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm shadow-emerald-200",
     ghost:"text-slate-600 hover:bg-slate-100",
   };
-  const sz = { sm:"px-3 py-1.5 text-xs", md:"px-4 py-2.5 text-sm", lg:"px-6 py-3 text-base" };
+  const sz = { sm:"px-3 py-1.5 text-xs", md:"px-4 py-2.5 text-sm", lg:"px-6 py-3 text-base" }; 
   return (
     <button onClick={onClick} disabled={disabled}
       className={`${vs[v]} ${sz[size]} ${full?"w-full":""}  rounded-xl font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2`}>
