@@ -34,38 +34,6 @@ const tMon = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.g
 const mLbl = (ym) => { if(!ym) return ""; const [y,m]=ym.split("-"); return ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"][+m-1]+" "+y; };
 const months6 = () => Array.from({length:6},(_,i)=>{ const d=new Date(); d.setMonth(d.getMonth()-i); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; });
 
-// ═══════════════════════════════════════════════
-// STORAGE — robust personal storage with retry
-// ═══════════════════════════════════════════════
-const store = {
-  get: async (k) => {
-    for (let i=0; i<3; i++) {
-      try {
-        const r = await store.get(k);
-        if (r && r.value !== undefined) return JSON.parse(r.value);
-        return null;
-      } catch (e) {
-        if (i===2) return null;
-        await new Promise(res=>setTimeout(res,200));
-      }
-    }
-    return null;
-  },
-  set: async (k,v) => {
-    for (let i=0; i<3; i++) {
-      try {
-        await store.set(k, JSON.stringify(v));
-        // Verify write succeeded
-        const check = await store.get(k);
-        if (check && check.value !== undefined) return true;
-      } catch(e) {
-        if (i===2) { console.error("STORAGE WRITE FAILED:", k, e); return false; }
-        await new Promise(res=>setTimeout(res,300));
-      }
-    }
-    return false;
-  }
-};
 const mkRooms = (n=42) => Array.from({length:n},(_,i)=>({
   id:uid(), nomor:String(i+1).padStart(2,"0"),
   lantai:i<12?1:i<24?2:i<36?3:4,
