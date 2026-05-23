@@ -1639,7 +1639,7 @@ Berikut tagihan sewa kamar Anda di *${inv.companyInfo?.name||"Kos Meruya"}*:
 💰 Total       : *${fRp(inv.nominal)}*
 ⏰ Jatuh Tempo : ${fD(inv.dueDate)}
 
-📎 Terlampir invoice PDF di atas.
+🔗 Lihat invoice online:\nhttps://kos-meruya-pgkq.vercel.app/#inv-${inv.id}
 
 ${banks?"Transfer pembayaran ke:\n"+banks+"\n":""}
 Mohon konfirmasi via WhatsApp setelah transfer.
@@ -1690,7 +1690,7 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
       companyInfo:  settings.companyInfo||{name:"Kos Meruya"},
       generatedBy: user, generatedAt: now(), paid: false,
     };
-    await store.set(`km-inv-${inv.id}`, inv, true);
+    await store.set(`km-inv-${inv.id}`, inv);
     const newInvs = [inv,...invoices];
     await saveInvs(newInvs);
     await addAudit("INVOICE",`${inv.invoiceNo} dibuat untuk ${inv.tenantName} (K-${inv.roomNomor}) – ${inv.periode?.label}`);
