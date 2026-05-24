@@ -791,7 +791,7 @@ function PaymentsPage({ role, user, rooms, tenants, payments, savePayments, addA
             <div className="grid grid-cols-2 gap-3">
               <div><label className="text-xs font-bold text-slate-600 block mb-1">Periode *</label>
                 <select className={inp} value={form.periode} onChange={e=>setForm({...form,periode:e.target.value})}>
-                  {ms.map(m=><option key={m} value={m}>{mLbl(m)}</option>)}</select></div>
+                  {Array.from({length:12},(_,i)=>{const d=new Date();d.setMonth(d.getMonth()-i);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;}).map(m=><option key={m} value={m}>{mLbl(m)}</option>)}</select></div>
               <div><label className="text-xs font-bold text-slate-600 block mb-1">Nominal (Rp) *</label>
                 <input type="number" className={inp} value={form.nominal||0} onChange={e=>setForm({...form,nominal:e.target.value})}/></div>
             </div>
