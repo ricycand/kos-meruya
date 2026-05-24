@@ -1190,7 +1190,7 @@ function ReportsPage({ rooms, tenants, payments, expenses, settings, audit, kasT
 }
 
 // ═══════════════════════════════════════════════
-function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, saveRooms }) {
+function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, saveRooms, users, saveUsers }) {
   const [form, setForm]    = useState({...settings, kepemilikan:{...settings.kepemilikan}});
   const [pins, setPins]    = useState({...settings.pins});
   const [saved, setSaved]  = useState(false);
@@ -1464,6 +1464,66 @@ function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, 
         <Btn onClick={doSave} size="lg">Simpan Semua Perubahan</Btn>
         {saved&&<span className="text-emerald-600 font-black">✓ Tersimpan!</span>}
       </div>
+
+      {/* KELOLA PENGGUNA */}
+      <Card className="p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Shield size={18} className="text-blue-500"/>
+            <h2 className="font-black text-slate-900">Kelola Pengguna</h2>
+          </div>
+          <button onClick={()=>{
+            const id=prompt("ID Pengguna (huruf kecil tanpa spasi):");
+            if(!id||!id.trim())return;
+            if((users||[]).find(u=>u.id===id))return alert("ID sudah dipakai");
+            const nama=prompt("Nama Lengkap:"); if(!nama)return;
+            const role=prompt("Role (admin/investor/staff):","staff");
+            if(!["admin","investor","staff"].includes(role))return alert("Role harus admin, investor, atau staff");
+            const password=prompt("Password:");
+            if(!password||password.length<4)return alert("Password minimal 4 karakter");
+            saveUsers([...(users||[]),{id:id.trim().toLowerCase(),nama,role,password}]);
+            addAudit("USER_TAMBAH",`User baru: ${id} (${role})`);
+          }} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl">
+            <Plus size={14} className="inline mr-1"/>Tambah User
+          </button>
+        </div>
+        <p className="text-sm text-slate-500 mb-4">Atur akun login untuk investor dan staff. Total: {(users||[]).length} pengguna.</p>
+        <div className="space-y-2">
+          {(users||[]).map(u=>(
+            <div key={u.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition">
+              <div className="flex items-center gap-3">
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-white text-sm ${u.role==="admin"?"bg-purple-600":u.role==="investor"?"bg-blue-600":"bg-slate-500"}`}>
+                  {u.nama?.[0]?.toUpperCase()||"?"}
+                </div>
+                <div>
+                  <p className="font-bold text-slate-900 text-sm">{u.nama}</p>
+                  <p className="text-xs text-slate-500">ID: <span className="font-mono">{u.id}</span> · {u.role}</p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={()=>{
+                  const nama=prompt("Nama:",u.nama);if(!nama)return;
+                  const password=prompt("Password baru (kosongkan jika tidak ganti):");
+                  const updated=(users||[]).map(x=>x.id===u.id?{...x,nama,password:password||x.password}:x);
+                  saveUsers(updated);
+                  addAudit("USER_EDIT",`User ${u.id} diupdate`);
+                }} className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold rounded-lg border border-slate-200">
+                  Edit
+                </button>
+                {u.id!=="admin"&&u.id!==user&&(
+                  <button onClick={()=>{
+                    if(!confirm(`Hapus user ${u.nama} (${u.id})?`))return;
+                    saveUsers((users||[]).filter(x=>x.id!==u.id));
+                    addAudit("USER_HAPUS",`User ${u.id} dihapus`);
+                  }} className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold rounded-lg">
+                    Hapus
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
 
       {/* RESET DATA */}
       <Card className="p-6 border-2 border-red-100">
