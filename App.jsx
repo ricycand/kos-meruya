@@ -172,7 +172,7 @@ function LoginScreen({ settings, users, onLogin }) {
   );
 }
 
-function Layout({ children, page, setPage, role, user, onLogout, expenses, open, setOpen }) {
+function Layout({ children, page, setPage, role, user, onLogout, expenses, open, setOpen, myPerms }) {
   const NAV = [
     { id:"dashboard", icon:Home,      label:"Dashboard",       roles:["admin","investor","staff"] },
     { id:"rooms",     icon:Grid,      label:"Kamar",           roles:["admin","investor","staff"] },
