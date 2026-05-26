@@ -576,11 +576,25 @@ function TenantsPage({ role, rooms, tenants, saveTenants, saveRooms, addAudit, m
     if (modal==="add") {
       const room = rooms.find(r=>r.id===form.kamarId);
       if (room?.status==="terisi") return alert("Kamar sudah terisi!");
+      if (tenants.some(t=>t.aktif&&t.kamarId===form.kamarId)) return alert("Kamar sudah ada penyewa aktif!");
       const t = {...form,id:uid(),aktif:true,depositStatus:"disimpan"};
       await saveTenants([...tenants,t]);
       await saveRooms(rooms.map(r=>r.id===form.kamarId?{...r,status:"terisi",penyewaId:t.id}:r));
       await addAudit("PENYEWA_MASUK",`${form.nama} masuk kamar ${room?.nomor}`);
     } else {
+      const kamarBerubah = form.kamarId !== modal.kamarId;
+      if (kamarBerubah) {
+        const newRoom = rooms.find(r=>r.id===form.kamarId);
+        if (newRoom?.status==="terisi"||tenants.some(t=>t.aktif&&t.id!==modal.id&&t.kamarId===form.kamarId))
+          return alert("Kamar tujuan sudah terisi!");
+        await saveRooms(rooms.map(r=>{
+          if(r.id===modal.kamarId) return {...r,status:"kosong",penyewaId:null};
+          if(r.id===form.kamarId) return {...r,status:"terisi",penyewaId:modal.id};
+          return r;
+        }));
+        const oldRoom = rooms.find(r=>r.id===modal.kamarId);
+        await addAudit("PENYEWA_PINDAH",`${form.nama} pindah dari K-${oldRoom?.nomor} ke K-${newRoom?.nomor}`);
+      }
       await saveTenants(tenants.map(t=>t.id===modal.id?{...t,...form}:t));
       await addAudit("PENYEWA_EDIT",`Data ${form.nama} diupdate`);
     }
@@ -596,7 +610,12 @@ function TenantsPage({ role, rooms, tenants, saveTenants, saveRooms, addAudit, m
     setCoModal(null);
   };
 
-  const avail = rooms.filter(r=>r.status==="kosong"||(modal&&modal!=="add"&&r.id===modal.kamarId));
+  const avail = rooms.filter(r=>{
+    if(modal&&modal!=="add"&&r.id===modal.kamarId) return true;
+    if(r.status!=="kosong") return false;
+    if(tenants.some(t=>t.aktif&&t.kamarId===r.id)) return false;
+    return true;
+  });
 
   return (
     <div className="space-y-5">
