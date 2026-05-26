@@ -1469,6 +1469,7 @@ function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, 
                 const rt = types.find(t=>t.nama===bulkTipe);
                 if(!rt) return;
                 if(!confirm(`Set SEMUA ${rooms.length} kamar ke tipe "${rt.nama}" dengan harga ${fRp(rt.harga)}/bulan?`)) return;
+                await saveSettings({...settings, roomTypes: types});
                 const updated = rooms.map(r=>({...r, tipe:rt.nama, harga:rt.harga}));
                 await saveRooms(updated);
                 await addAudit("TIPE_BULK",`Semua ${rooms.length} kamar diset ke tipe "${rt.nama}" — ${fRp(rt.harga)}`);
@@ -1482,6 +1483,7 @@ function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, 
           <Btn v="secondary" onClick={async()=>{
             const types = form.roomTypes||[];
             if(types.length===0) return alert("Belum ada tipe kamar.");
+            await saveSettings({...settings, roomTypes: types});
             const updated = rooms.map(r=>{
               const rt = types.find(t=>t.nama===r.tipe);
               return rt ? {...r, harga:rt.harga} : r;
