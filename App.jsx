@@ -182,7 +182,6 @@ function Layout({ children, page, setPage, role, user, onLogout, expenses, open,
     { id:"dashboard", icon:Home,      label:"Dashboard",       roles:["admin","investor","staff"] },
     { id:"rooms",     icon:Grid,      label:"Kamar",           roles:["admin","investor","staff"] },
     { id:"tenants",   icon:Users,     label:"Penyewa",         roles:["admin","investor","staff"] },
-    { id:"payments",  icon:CreditCard,label:"Pembayaran",      roles:["admin","investor","staff"] },
     { id:"expenses",  icon:Wallet,    label:"Kas & Keluar",    roles:["admin","investor","staff"] },
     { id:"invoices",  icon:FileText,  label:"Invoice",         roles:["admin","investor","staff"] },
     { id:"mutasi",    icon:TrendingUp,label:"Mutasi Keuangan", roles:["admin","investor"] },
@@ -553,7 +552,36 @@ function TenantsPage({ role, rooms, tenants, saveTenants, saveRooms, addAudit, m
   const [coForm,  setCoForm] = useState({dikembalikan:0,catatan:""});
   const [showAlumni, setShowAlumni] = useState(false);
   const [sortBy, setSortBy] = useState("nama");
+  const [detailModal, setDetailModal] = useState(null);
+  const [tInvoices, setTInvoices] = useState([]);
   const isEdit = canEdit;
+
+  useEffect(()=>{store.get("km-invoices").then(d=>setTInvoices(toArr(d)||[]));},[tenants]);
+
+  const getBerlaku = (t) => {
+    const invs = tInvoices.filter(i=>i.tenantId===t.id);
+    const paidInvs = invs.filter(i=>{
+      const paid = (i.invPayments||[]).reduce((s,p)=>s+(+p.amount||0),0);
+      return i.paid || paid >= (+i.nominal||0);
+    });
+    if(paidInvs.length===0) return null;
+    const dates = paidInvs.map(i=>i.periode?.end).filter(Boolean).sort();
+    return dates[dates.length-1]||null;
+  };
+
+  const handleKtpUpload = async (e, t) => {
+    const file = e.target.files?.[0];
+    if(!file) return;
+    if(file.size>2*1024*1024) return alert("Ukuran KTP max 2MB");
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const base64 = ev.target.result;
+      await saveTenants(tenants.map(x=>x.id===t.id?{...x,ktpImage:base64}:x));
+      setDetailModal({...t, ktpImage:base64});
+      await addAudit("KTP_UPLOAD",`KTP ${t.nama} diupload`);
+    };
+    reader.readAsDataURL(file);
+  };
 
   const filtered = tenants
     .filter(t=>showAlumni ? !t.aktif : t.aktif)
@@ -650,7 +678,7 @@ function TenantsPage({ role, rooms, tenants, saveTenants, saveRooms, addAudit, m
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="border-b border-slate-100">
-              {["Kamar","Lantai","Nama","HP","Masuk","Keluar","JT","Deposit","Status",""].map(h=>(
+              {["Kamar","Lantai","Nama","HP","Masuk","Berlaku s/d","JT","Deposit","Status",""].map(h=>(
                 <th key={h} className="text-left px-5 py-3.5 text-xs font-bold text-slate-400 uppercase tracking-widest">{h}</th>
               ))}
             </tr></thead>
@@ -662,15 +690,22 @@ function TenantsPage({ role, rooms, tenants, saveTenants, saveRooms, addAudit, m
                   <tr key={t.id} className="border-b border-slate-50 hover:bg-slate-50/80 transition">
                     <td className="px-5 py-3.5 font-black text-blue-600">K-{room?.nomor||"—"}</td>
                     <td className="px-5 py-3.5 text-slate-500 text-sm">Lt {room?.lantai||"—"}</td>
-                    <td className="px-5 py-3.5 font-bold text-slate-800">{t.nama}</td>
+                    <td className="px-5 py-3.5 font-bold text-blue-600 cursor-pointer hover:underline" onClick={()=>setDetailModal(t)}>{t.nama}</td>
                     <td className="px-5 py-3.5 text-slate-500">{t.hp||"—"}</td>
                     <td className="px-5 py-3.5 text-slate-500">{fD(t.tanggalMasuk)}</td>
-                    <td className="px-5 py-3.5 text-slate-500">{t.tanggalKeluar?fD(t.tanggalKeluar):<span className="text-slate-300">—</span>}</td>
+                    <td className="px-5 py-3.5">{(()=>{
+                      if(!t.aktif) return <span className="text-slate-400">{t.tanggalKeluar?fD(t.tanggalKeluar):"—"}</span>;
+                      const b=getBerlaku(t);
+                      if(!b) return <span className="text-slate-300">—</span>;
+                      const exp=new Date(b); const now2=new Date(); const diff=Math.ceil((exp-now2)/(1000*60*60*24));
+                      return <span className={`text-xs font-bold ${diff<7?"text-red-600":diff<30?"text-amber-600":"text-emerald-600"}`}>{fD(b)}{diff<0?" (lewat)":`  (${diff}hr)`}</span>;
+                    })()}</td>
                     <td className="px-5 py-3.5 text-slate-500">Tgl {t.jatuhTempo}</td>
                     <td className="px-5 py-3.5 text-slate-500">{fRp(t.deposit)}</td>
                     <td className="px-5 py-3.5"><Badge status={t.aktif?"aktif":"keluar"}/></td>
                     <td className="px-5 py-3.5">
                       <div className="flex gap-1.5">
+                        <button onClick={()=>setDetailModal(t)} className="p-1.5 hover:bg-blue-50 rounded-lg text-blue-400 hover:text-blue-700 transition"><Eye size={14}/></button>
                         <button onClick={()=>{setForm({...t});setModal(t);}} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-700 transition"><Edit size={14}/></button>
                         {isEdit&&t.aktif&&<button onClick={()=>{setCoModal(t);setCoForm({dikembalikan:t.deposit,catatan:""}); }}
                           className="px-2.5 py-1 text-xs font-bold bg-red-50 text-red-500 hover:bg-red-100 rounded-lg transition">Checkout</button>}
@@ -734,12 +769,87 @@ function TenantsPage({ role, rooms, tenants, saveTenants, saveRooms, addAudit, m
           </div>
         </Modal>
       )}
+
+      {/* Detail Penyewa Modal */}
+      {detailModal&&(()=>{
+        const t=detailModal;
+        const room=rooms.find(r=>r.id===t.kamarId);
+        const invs=tInvoices.filter(i=>i.tenantId===t.id).sort((a,b)=>new Date(b.generatedAt||0)-new Date(a.generatedAt||0));
+        const berlaku=getBerlaku(t);
+        return (
+          <Modal title={`Detail — ${t.nama}`} onClose={()=>setDetailModal(null)} size="lg">
+            <div className="space-y-5">
+              {/* Info */}
+              <div className="grid grid-cols-2 gap-3 bg-slate-50 rounded-xl p-4 text-sm">
+                <div><span className="text-slate-400">Kamar:</span> <span className="font-bold text-blue-600">K-{room?.nomor||"?"} (Lt {room?.lantai})</span></div>
+                <div><span className="text-slate-400">HP:</span> <span className="font-bold">{t.hp||"—"}</span></div>
+                <div><span className="text-slate-400">Masuk:</span> <span className="font-bold">{fD(t.tanggalMasuk)}</span></div>
+                <div><span className="text-slate-400">Jatuh Tempo:</span> <span className="font-bold">Tgl {t.jatuhTempo}</span></div>
+                <div><span className="text-slate-400">Deposit:</span> <span className="font-bold">{fRp(t.deposit)}</span></div>
+                <div><span className="text-slate-400">Berlaku s/d:</span> <span className={`font-black ${berlaku?"text-emerald-600":"text-slate-400"}`}>{berlaku?fD(berlaku):"Belum ada pembayaran"}</span></div>
+                {t.ktp&&<div className="col-span-2"><span className="text-slate-400">No KTP:</span> <span className="font-bold">{t.ktp}</span></div>}
+                {t.kontakDarurat&&<div className="col-span-2"><span className="text-slate-400">Kontak Darurat:</span> <span className="font-bold">{t.kontakDarurat} ({t.kontakDaruratHp})</span></div>}
+                {t.catatan&&<div className="col-span-2"><span className="text-slate-400">Catatan:</span> {t.catatan}</div>}
+              </div>
+
+              {/* KTP */}
+              <div className="bg-slate-50 rounded-xl p-4">
+                <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Foto KTP</p>
+                {t.ktpImage?(
+                  <img src={t.ktpImage} alt="KTP" className="max-w-full max-h-48 rounded-xl border border-slate-200 mb-2"/>
+                ):(
+                  <p className="text-sm text-slate-400 mb-2">Belum ada foto KTP</p>
+                )}
+                <label className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-lg cursor-pointer transition">
+                  📷 {t.ktpImage?"Ganti":"Upload"} KTP
+                  <input type="file" accept="image/*" className="hidden" onChange={e=>handleKtpUpload(e,t)}/>
+                </label>
+              </div>
+
+              {/* Invoice & Payment History */}
+              <div>
+                <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Riwayat Invoice & Pembayaran</p>
+                {invs.length===0&&<p className="text-sm text-slate-400 text-center py-4">Belum ada invoice</p>}
+                <div className="space-y-2">
+                  {invs.map(inv=>{
+                    const paid=(inv.invPayments||[]).reduce((s,p)=>s+(+p.amount||0),0);
+                    const lunas=inv.paid||paid>=(+inv.nominal||0);
+                    return (
+                      <div key={inv.id} className={`rounded-xl p-3 border ${lunas?"border-emerald-200 bg-emerald-50/50":"border-slate-200 bg-white"}`}>
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="text-sm font-bold text-slate-800">{inv.invoiceNo}</p>
+                            <p className="text-xs text-slate-400">{inv.periode?.label}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-black text-sm">{fRp(inv.nominal)}</p>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${lunas?"bg-emerald-100 text-emerald-700":paid>0?"bg-amber-100 text-amber-700":"bg-red-100 text-red-600"}`}>
+                              {lunas?"Lunas":paid>0?`Sebagian (${fRp(paid)})`:"Belum Bayar"}
+                            </span>
+                          </div>
+                        </div>
+                        {(inv.invPayments||[]).length>0&&(
+                          <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
+                            {(inv.invPayments||[]).map(p=>(
+                              <div key={p.id} className="flex justify-between text-[11px]">
+                                <span className="text-slate-500">{fD(p.date)} · {p.method==="transfer"?"Transfer":"Cash"}{p.bank?` ${p.bank}`:""}</span>
+                                <span className="font-bold text-emerald-700">{fRp(p.amount)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </Modal>
+        );
+      })()}
     </div>
   );
 }
-
-// ═══════════════════════════════════════════════
-// PAYMENTS PAGE
 // ═══════════════════════════════════════════════
 function PaymentsPage({ role, user, rooms, tenants, payments, savePayments, addAudit , myPerms }) {
   const canEdit = myPerms?.payments==="edit";
@@ -1939,7 +2049,7 @@ function InvoicePublicView({ inv }) {
 // ═══════════════════════════════════════════════
 // INVOICES PAGE
 // ═══════════════════════════════════════════════
-function InvoicesPage({ role, user, rooms, tenants, settings, addAudit, audit , myPerms }) {
+function InvoicesPage({ role, user, rooms, tenants, settings, addAudit, audit, myPerms, payments, savePayments }) {
   const canEdit = myPerms?.invoices==="edit";
   const [invoices, setInvs]  = useState([]);
   const [modal,    setModal] = useState(null);
@@ -1950,8 +2060,15 @@ function InvoicesPage({ role, user, rooms, tenants, settings, addAudit, audit , 
   const [previewInv,setPreviewInv]=useState(null);
   const [multiModal,setMultiModal]=useState(null);
   const [multiMonths,setMultiMonths]=useState(3);
+  const [payModal,  setPayModal] = useState(null);
+  const [payForm,   setPayForm]  = useState({amount:0,date:"",method:"transfer",bank:"",pengirim:"",referensi:"",catatan:""});
 
   const isEdit = canEdit;
+
+  // Payment helpers
+  const getPaid = (inv) => (inv.invPayments||[]).reduce((s,p)=>s+(+p.amount||0),0);
+  const getRemaining = (inv) => Math.max(0,(+inv.nominal||0)-getPaid(inv));
+  const isLunas = (inv) => inv.paid || getPaid(inv)>=(+inv.nominal||0);
 
   useEffect(()=>{
     store.get("km-invoices").then(d=>{ setInvs(toArr(d)||[]); setLI(false); });
@@ -2087,11 +2204,36 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
     await addAudit("INV_BATAL", `Invoice ${inv.invoiceNo} - ${inv.tenantName} dibatalkan oleh ${user}`);
   };
 
-  const markPaid = async (inv) => {
-    const updated = invoices.map(i=>i.id===inv.id?{...i,paid:true,paidAt:now(),paidBy:user}:i);
-    await saveInvs(updated);
-    await store.set(`km-inv-${inv.id}`, {...inv,paid:true,paidAt:now(),paidBy:user}, true);
-    await addAudit("INV_LUNAS",`${inv.invoiceNo} – ${inv.tenantName} ditandai LUNAS oleh ${user}`);
+  const openPayModal = (inv, type) => {
+    const remaining = getRemaining(inv);
+    setPayForm({
+      amount: type==="full" ? remaining : 0,
+      date: new Date().toISOString().split("T")[0],
+      method:"transfer", bank:"", pengirim:"", referensi:"", catatan:""
+    });
+    setPayModal({inv, type});
+  };
+
+  const recordPayment = async () => {
+    const {inv, type} = payModal;
+    const amt = +payForm.amount;
+    const remaining = getRemaining(inv);
+    if(!amt||amt<=0) return alert("Nominal harus lebih dari 0");
+    if(amt>remaining) return alert(`Melebihi sisa tagihan (${fRp(remaining)})`);
+    const payment = {id:uid(),amount:amt,date:payForm.date,method:payForm.method,bank:payForm.bank,pengirim:payForm.pengirim,referensi:payForm.referensi,catatan:payForm.catatan,inputBy:user,inputAt:now()};
+    const newInvPayments = [...(inv.invPayments||[]), payment];
+    const totalPaid = newInvPayments.reduce((s,p)=>s+(+p.amount||0),0);
+    const fullyPaid = totalPaid >= (+inv.nominal||0);
+    const updatedInv = {...inv, invPayments:newInvPayments, paid:fullyPaid, paidAt:fullyPaid?now():inv.paidAt, paidBy:fullyPaid?user:inv.paidBy};
+    const updatedInvs = invoices.map(i=>i.id===inv.id?updatedInv:i);
+    await saveInvs(updatedInvs);
+    await store.set(`km-inv-${inv.id}`, updatedInv);
+    // Also record in main payments[] for reporting
+    const payRecord = {id:payment.id,kamarId:inv.kamarId||"",penyewaId:inv.tenantId,periode:inv.targetMonth||"",nominal:amt,metode:payForm.method,bank:payForm.bank,pengirim:payForm.pengirim,referensi:payForm.referensi,tanggal:payForm.date,catatan:`${inv.invoiceNo}${payForm.catatan?" - "+payForm.catatan:""}`,inputBy:user,inputAt:now()};
+    await savePayments([...payments,payRecord]);
+    await addAudit("INV_BAYAR",`${inv.invoiceNo} – ${inv.tenantName}: ${type==="full"?"Bayar Penuh":"Bayar Sebagian"} ${fRp(amt)}${fullyPaid?" → LUNAS":` (sisa ${fRp(remaining-amt)})`}`);
+    setPayModal(null);
+    if(fullyPaid) alert(`✅ ${inv.invoiceNo} LUNAS!`);
   };
 
   const showShare = (inv) => setShowWA({ inv, msg: genWAMsg(inv) });
@@ -2099,6 +2241,9 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
   const activeTenants = tenants.filter(t=>t.aktif);
   const ms = months6();
   const noBank = !settings.bankAccounts?.length;
+
+  // Jatuh tempo terdekat (unpaid invoices sorted by due date)
+  const unpaidInvs = invoices.filter(i=>!isLunas(i)).sort((a,b)=>new Date(a.dueDate||"9999")-new Date(b.dueDate||"9999"));
 
   if (multiModal) {
     const room = rooms.find(r=>r.id===multiModal.kamarId);
@@ -2277,6 +2422,38 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
         </Card>
       )}
 
+      {/* Jatuh Tempo Terdekat */}
+      {!loadingInv&&unpaidInvs.length>0&&(
+        <Card className="p-5 border-l-4 border-amber-400">
+          <div className="flex items-center gap-2 mb-3">
+            <Clock size={18} className="text-amber-500"/>
+            <h2 className="font-black text-slate-900">Jatuh Tempo Terdekat</h2>
+            <span className="text-xs font-bold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">{unpaidInvs.length} belum lunas</span>
+          </div>
+          <div className="space-y-2">
+            {unpaidInvs.slice(0,5).map(inv=>{
+              const remaining = getRemaining(inv);
+              const paid = getPaid(inv);
+              const overdue = new Date(inv.dueDate)<new Date();
+              return (
+                <div key={inv.id} className={`flex items-center justify-between py-2.5 px-3 rounded-xl ${overdue?"bg-red-50":"bg-slate-50"}`}>
+                  <div>
+                    <p className="text-sm font-bold text-slate-800">{inv.tenantName} · K-{inv.roomNomor}</p>
+                    <p className="text-xs text-slate-400">JT: <span className={`font-bold ${overdue?"text-red-600":"text-slate-600"}`}>{fD(inv.dueDate)}</span> · {inv.invoiceNo}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-black text-slate-800">{fRp(remaining)}</p>
+                    {paid>0&&<p className="text-[10px] text-emerald-600 font-bold">Sudah {fRp(paid)}</p>}
+                  </div>
+                  {isEdit&&<button onClick={()=>openPayModal(inv,"full")} className="ml-3 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl">Bayar</button>}
+                </div>
+              );
+            })}
+            {unpaidInvs.length>5&&<p className="text-xs text-slate-400 text-center pt-1">+{unpaidInvs.length-5} invoice lainnya</p>}
+          </div>
+        </Card>
+      )}
+
       {/* Invoice list */}
       <Card>
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
@@ -2286,38 +2463,62 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
         {loadingInv&&<p className="text-center py-10 text-slate-400 text-sm">Memuat...</p>}
         {!loadingInv&&invoices.length===0&&<p className="text-center py-10 text-slate-400 text-sm">Belum ada invoice dibuat</p>}
         <div className="divide-y divide-slate-50">
-          {invoices.map(inv=>(
+          {invoices.map(inv=>{
+            const paid = getPaid(inv);
+            const remaining = getRemaining(inv);
+            const lunas = isLunas(inv);
+            const partial = paid>0&&!lunas;
+            return (
             <div key={inv.id} className="px-6 py-4 hover:bg-slate-50/80 transition">
               <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-black text-slate-800">{inv.invoiceNo}</span>
-                    <Badge status={inv.paid?"lunas":"belum"}/>
+                    {lunas&&<span className="text-xs font-bold bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-full">✓ Lunas</span>}
+                    {partial&&<span className="text-xs font-bold bg-amber-100 text-amber-700 px-2.5 py-1 rounded-full">Sebagian ({fRp(paid)}/{fRp(inv.nominal)})</span>}
+                    {!lunas&&!partial&&<span className="text-xs font-bold bg-red-100 text-red-600 px-2.5 py-1 rounded-full">Belum Bayar</span>}
                   </div>
                   <p className="font-bold text-slate-700 mt-1 text-sm">{inv.tenantName} · Kamar {inv.roomNomor}</p>
                   <p className="text-xs text-slate-400 mt-0.5">{inv.periode?.label}</p>
-                  <p className="text-xs text-slate-400">JT: {fD(inv.dueDate)} · Dibuat {fD(inv.generatedAt)} oleh {inv.generatedBy}</p>
+                  <p className="text-xs text-slate-400">JT: {fD(inv.dueDate)} · Dibuat {fD(inv.generatedAt)}</p>
+                  {/* Payment history */}
+                  {(inv.invPayments||[]).length>0&&(
+                    <div className="mt-2 space-y-1">
+                      {(inv.invPayments||[]).map(p=>(
+                        <p key={p.id} className="text-[11px] text-emerald-700 bg-emerald-50 px-2 py-1 rounded-lg inline-block mr-1">
+                          {fD(p.date)} · {fRp(p.amount)} · {p.method==="transfer"?"Transfer":"Cash"}{p.bank?` (${p.bank})`:""}
+                        </p>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
-                  <span className="font-black text-slate-800">{fRp(inv.nominal)}</span>
-                  {!inv.paid&&isEdit&&(
-                    <button onClick={()=>markPaid(inv)} className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold rounded-xl transition">✓ Lunas</button>
+                  <div className="text-right mr-2">
+                    <span className="font-black text-slate-800">{fRp(inv.nominal)}</span>
+                    {!lunas&&paid>0&&<p className="text-xs font-bold text-red-500">Sisa: {fRp(remaining)}</p>}
+                  </div>
+                  {!lunas&&isEdit&&(
+                    <button onClick={()=>openPayModal(inv,"full")} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition">Bayar Penuh</button>
                   )}
-                  {!inv.paid&&isEdit&&(
+                  {!lunas&&isEdit&&(
+                    <button onClick={()=>openPayModal(inv,"partial")} className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl transition">Sebagian</button>
+                  )}
+                  {!lunas&&isEdit&&(
                     <button onClick={()=>cancelInvoice(inv)} className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold rounded-xl transition">✕ Batal</button>
                   )}
                   <button onClick={()=>printInvoice(inv)}
-                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5">
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition">
                     🖨 PDF
                   </button>
-                  <button onClick={()=>showShare(inv)}
-                    className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5">
+                  {!lunas&&<button onClick={()=>showShare(inv)}
+                    className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-xl transition">
                     💬 WA
-                  </button>
+                  </button>}
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </Card>
 
@@ -2422,10 +2623,57 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
           </div>
         </Modal>
       )}
+
+      {/* Payment Modal */}
+      {payModal&&(
+        <Modal title={`${payModal.type==="full"?"Bayar Penuh":"Bayar Sebagian"} – ${payModal.inv.invoiceNo}`} onClose={()=>setPayModal(null)}>
+          <div className="space-y-4">
+            <div className="bg-blue-50 rounded-xl p-4">
+              <p className="text-sm"><span className="font-bold">Penyewa:</span> {payModal.inv.tenantName} · K-{payModal.inv.roomNomor}</p>
+              <p className="text-sm"><span className="font-bold">Total Tagihan:</span> {fRp(payModal.inv.nominal)}</p>
+              <p className="text-sm"><span className="font-bold">Sudah Dibayar:</span> {fRp(getPaid(payModal.inv))}</p>
+              <p className="text-sm font-black text-blue-700">Sisa: {fRp(getRemaining(payModal.inv))}</p>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-600 block mb-1">Nominal Bayar (Rp) *</label>
+              <input type="number" className={inp} value={payForm.amount||0}
+                onChange={e=>setPayForm({...payForm,amount:+e.target.value})}
+                max={getRemaining(payModal.inv)}/>
+              {payModal.type==="partial"&&payForm.amount>0&&payForm.amount<getRemaining(payModal.inv)&&(
+                <p className="text-xs text-amber-600 mt-1">Sisa setelah bayar: {fRp(getRemaining(payModal.inv)-payForm.amount)}</p>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="text-xs font-bold text-slate-600 block mb-1">Tanggal Bayar *</label>
+                <input type="date" className={inp} value={payForm.date} onChange={e=>setPayForm({...payForm,date:e.target.value})}/></div>
+              <div><label className="text-xs font-bold text-slate-600 block mb-1">Metode</label>
+                <select className={inp} value={payForm.method} onChange={e=>setPayForm({...payForm,method:e.target.value})}>
+                  <option value="transfer">Transfer Bank</option><option value="tunai">Tunai / Cash</option></select></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="text-xs font-bold text-slate-600 block mb-1">Bank</label>
+                <input className={inp} placeholder="BCA, BRI, Mandiri..." value={payForm.bank} onChange={e=>setPayForm({...payForm,bank:e.target.value})}/></div>
+              <div><label className="text-xs font-bold text-slate-600 block mb-1">Nama Pengirim</label>
+                <input className={inp} value={payForm.pengirim} onChange={e=>setPayForm({...payForm,pengirim:e.target.value})}/></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="text-xs font-bold text-slate-600 block mb-1">No. Referensi</label>
+                <input className={inp} value={payForm.referensi} onChange={e=>setPayForm({...payForm,referensi:e.target.value})}/></div>
+              <div><label className="text-xs font-bold text-slate-600 block mb-1">Catatan</label>
+                <input className={inp} value={payForm.catatan} onChange={e=>setPayForm({...payForm,catatan:e.target.value})}/></div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <Btn v="secondary" onClick={()=>setPayModal(null)}>Batal</Btn>
+              <Btn v={payModal.type==="full"?"success":"primary"} onClick={recordPayment}>
+                {payModal.type==="full"?"✓ Bayar Penuh":"Simpan Pembayaran Sebagian"}
+              </Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
-
 
 function StatusBayarPage({ rooms, tenants, payments }) {
   const [fMonth,setFMonth]=useState(new Date().toISOString().slice(0,7));
@@ -2811,7 +3059,6 @@ export default function App() {
       {page==="dashboard" && <Dashboard {...ctx} setPage={setPage}/>}
       {page==="rooms"     && myPerms.rooms!=="none"     && <RoomsPage {...ctx}/>}
       {page==="tenants"   && myPerms.tenants!=="none"   && <TenantsPage {...ctx}/>}
-      {page==="payments"  && myPerms.payments!=="none"  && <PaymentsPage {...ctx}/>}
       {page==="expenses"  && myPerms.expenses!=="none"  && <ExpensesPage {...ctx}/>}
       {page==="invoices"  && myPerms.invoices!=="none"  && <InvoicesPage {...ctx}/>}
       {page==="status"    && <StatusBayarPage {...ctx}/>}
