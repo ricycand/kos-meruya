@@ -404,7 +404,7 @@ function RoomsPage({ role, rooms, tenants, payments, saveRooms, addAudit, myPerm
     (filter==="semua" || r.status===filter) &&
     (lantai==="semua" || r.lantai===+lantai)
   );
-  const isAdmin = role==="admin" && canEdit;
+  const isAdmin = canEdit;
 
   const openAdd = () => { setForm({nomor:"",lantai:1,tipe:"Standard",harga:0,status:"kosong"}); setModal("add"); };
   const openEdit = (r) => { setForm({...r}); setModal(r); };
@@ -541,7 +541,7 @@ function TenantsPage({ role, rooms, tenants, saveTenants, saveRooms, addAudit, m
   const [coForm,  setCoForm] = useState({dikembalikan:0,catatan:""});
   const [showAlumni, setShowAlumni] = useState(false);
   const [sortBy, setSortBy] = useState("nama");
-  const isEdit = (role==="admin"||role==="staff") && canEdit;
+  const isEdit = canEdit;
 
   const filtered = tenants
     .filter(t=>showAlumni ? !t.aktif : t.aktif)
@@ -716,7 +716,7 @@ function PaymentsPage({ role, user, rooms, tenants, payments, savePayments, addA
   const [form,   setForm]   = useState({});
   const [fBulan, setFBulan] = useState(String(new Date().getMonth()+1).padStart(2,"0"));
   const [fTahun, setFTahun] = useState(String(new Date().getFullYear()));
-  const isEdit = (role==="admin"||role==="staff") && canEdit;
+  const isEdit = canEdit;
   const fMonth = `${fTahun}-${fBulan}`;
   const bulanList = [{v:"01",l:"Januari"},{v:"02",l:"Februari"},{v:"03",l:"Maret"},{v:"04",l:"April"},{v:"05",l:"Mei"},{v:"06",l:"Juni"},{v:"07",l:"Juli"},{v:"08",l:"Agustus"},{v:"09",l:"September"},{v:"10",l:"Oktober"},{v:"11",l:"November"},{v:"12",l:"Desember"}];
   const tahunList = Array.from({length:3},(_,i)=>String(new Date().getFullYear()-i));
@@ -854,7 +854,7 @@ function ExpensesPage({ role, user, expenses, saveExpenses, addAudit, myPerms })
   const fMonth = `${fTahun}-${fBulan}`;
   const bulanList = [{v:"01",l:"Januari"},{v:"02",l:"Februari"},{v:"03",l:"Maret"},{v:"04",l:"April"},{v:"05",l:"Mei"},{v:"06",l:"Juni"},{v:"07",l:"Juli"},{v:"08",l:"Agustus"},{v:"09",l:"September"},{v:"10",l:"Oktober"},{v:"11",l:"November"},{v:"12",l:"Desember"}];
   const tahunList = Array.from({length:3},(_,i)=>String(new Date().getFullYear()-i));
-  const isEdit = (role==="admin"||role==="staff") && canEdit;
+  const isEdit = canEdit;
   const isInv  = role==="admin"||role==="investor";
   const ms = months6();
 
@@ -1815,7 +1815,7 @@ function InvoicesPage({ role, user, rooms, tenants, settings, addAudit, audit , 
   const [multiModal,setMultiModal]=useState(null);
   const [multiMonths,setMultiMonths]=useState(3);
 
-  const isEdit = (role==="admin"||role==="staff") && canEdit;
+  const isEdit = canEdit;
 
   useEffect(()=>{
     store.get("km-invoices").then(d=>{ setInvs(toArr(d)||[]); setLI(false); });
@@ -2534,7 +2534,7 @@ function MutasiBankKasPage({ settings, saveSettings, payments, expenses, rooms, 
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div><h1 className="text-2xl font-black text-slate-900">Mutasi Keuangan</h1><p className="text-slate-400 text-sm">Bank & Kas Operasional</p></div>
-        {role==="admin"&&canEdit&&<button onClick={async()=>{const j=prompt("Jumlah transfer Bank ke Kas:");if(!j||isNaN(j))return;const tx={id:Math.random().toString(36).substr(2),tanggal:new Date().toISOString().split("T")[0],tipe:"masuk",jumlah:+j,deskripsi:"Transfer dari Bank",inputBy:user,inputAt:new Date().toISOString()};await saveKas([...(kasTx||[]),tx]);alert("Transfer berhasil!");}} className="px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded-xl">Transfer Bank→Kas</button>}
+        {canEdit&&<button onClick={async()=>{const j=prompt("Jumlah transfer Bank ke Kas:");if(!j||isNaN(j))return;const tx={id:Math.random().toString(36).substr(2),tanggal:new Date().toISOString().split("T")[0],tipe:"masuk",jumlah:+j,deskripsi:"Transfer dari Bank",inputBy:user,inputAt:new Date().toISOString()};await saveKas([...(kasTx||[]),tx]);alert("Transfer berhasil!");}} className="px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded-xl">Transfer Bank→Kas</button>}
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[["Saldo Bank",fRp(bankAkhir),"text-blue-600"],["Saldo Kas",fRp(kasAkhir),"text-amber-600"],
