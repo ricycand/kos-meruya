@@ -54,6 +54,11 @@ const DEF = {
   pins: { admin:"1234", ricy:"1111", arief:"2222", ferry:"3333", staff:"0000" },
   companyInfo: { name:"Kos Meruya", address:"", phone:"", email:"" },
   bankAccounts: [],
+  roomTypes: [
+    { id:"rt1", nama:"Standard", harga:0 },
+    { id:"rt2", nama:"AC", harga:0 },
+    { id:"rt3", nama:"Deluxe", harga:0 },
+  ],
 };
 
 const uid  = () => Math.random().toString(36).substr(2,9) + Date.now().toString(36);
@@ -375,7 +380,7 @@ function Dashboard({ role, user, rooms, tenants, payments, expenses, settings, s
 // ═══════════════════════════════════════════════
 // ROOMS PAGE
 // ═══════════════════════════════════════════════
-function RoomsPage({ role, rooms, tenants, payments, saveRooms, addAudit, myPerms }) {
+function RoomsPage({ role, rooms, tenants, payments, saveRooms, addAudit, myPerms, settings }) {
   const canEdit = myPerms?.rooms==="edit";
   const [modal,   setModal]  = useState(null);
   const [form,    setForm]   = useState({});
@@ -506,10 +511,17 @@ function RoomsPage({ role, rooms, tenants, payments, saveRooms, addAudit, myPerm
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div><label className="text-xs font-bold text-slate-600 block mb-1">Tipe</label>
-                <select className={inp} value={form.tipe||"Standard"} onChange={e=>setForm({...form,tipe:e.target.value})}>
-                  {["Standard","AC","Deluxe","VIP"].map(t=><option key={t}>{t}</option>)}</select></div>
+                <select className={inp} value={form.tipe||""} onChange={e=>{
+                  const tipe=e.target.value;
+                  const rt=(settings.roomTypes||[]).find(t=>t.nama===tipe);
+                  setForm({...form, tipe, harga:rt?.harga||form.harga||0});
+                }}>
+                  {(settings.roomTypes||[{nama:"Standard"},{nama:"AC"},{nama:"Deluxe"}]).map(t=><option key={t.nama} value={t.nama}>{t.nama}{t.harga?` (${fRp(t.harga)})`:""}</option>)}
+                  {form.tipe&&!(settings.roomTypes||[]).some(t=>t.nama===form.tipe)&&<option value={form.tipe}>{form.tipe} (tidak ada di setting)</option>}
+                </select></div>
               <div><label className="text-xs font-bold text-slate-600 block mb-1">Harga Sewa/Bulan (Rp)</label>
-                <input type="number" className={inp} value={form.harga||0} onChange={e=>setForm({...form,harga:e.target.value})}/></div>
+                <input type="number" className={inp} value={form.harga||0} onChange={e=>setForm({...form,harga:e.target.value})}/>
+                <p className="text-[11px] text-slate-400 mt-1">Otomatis dari tipe. Bisa dioverride manual.</p></div>
             </div>
             <div><label className="text-xs font-bold text-slate-600 block mb-1">Status</label>
               <select className={inp} value={form.status||"kosong"} onChange={e=>setForm({...form,status:e.target.value})}>
@@ -1256,7 +1268,7 @@ function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, 
           let nomor = `${prefix}${String(seq).padStart(2,"0")}`;
           while (usedNomors.has(nomor)) { seq++; nomor = `${prefix}${String(seq).padStart(2,"0")}`; }
           usedNomors.add(nomor);
-          updated.push({ id:uid(), nomor, lantai, tipe:"Standard", harga:0, status:"kosong", penyewaId:null });
+          updated.push({ id:uid(), nomor, lantai, tipe:(form.roomTypes||[])[0]?.nama||"Standard", harga:(form.roomTypes||[])[0]?.harga||0, status:"kosong", penyewaId:null });
           seq++;
         }
         msgs.push(`Lantai ${lantai}: +${diff} kamar baru`);
@@ -1312,6 +1324,7 @@ function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, 
       pins,
       companyInfo: form.companyInfo||DEF.companyInfo,
       bankAccounts: form.bankAccounts||[],
+      roomTypes: form.roomTypes||DEF.roomTypes,
     };
     await saveSettings(ns);
     await addAudit("SETTINGS",`${user} mengupdate pengaturan sistem`);
@@ -1380,6 +1393,70 @@ function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, 
           <Check size={16}/>Terapkan Konfigurasi Lantai
         </Btn>
         <p className="text-xs text-slate-400 mt-2">⚠ Kode kamar yang sudah diedit manual tidak akan berubah. Prefix hanya berlaku untuk kamar baru.</p>
+      </Card>
+
+      {/* TIPE & HARGA KAMAR */}
+      <Card className="p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Grid size={20} className="text-indigo-600"/>
+            <h2 className="font-black text-slate-900">Tipe & Harga Kamar</h2>
+          </div>
+          <Btn v="secondary" size="sm" onClick={()=>setForm({...form, roomTypes:[...(form.roomTypes||[]),{id:uid(),nama:"",harga:0}]})}>
+            <Plus size={14}/>Tambah Tipe
+          </Btn>
+        </div>
+        <p className="text-sm text-slate-500 mb-4">Harga kamar ditentukan dari tipe. Ubah harga di sini, lalu klik "Terapkan" untuk update semua kamar sekaligus.</p>
+        <div className="space-y-3">
+          {(form.roomTypes||[]).map((rt,i)=>{
+            const count = rooms.filter(r=>r.tipe===rt.nama).length;
+            return (
+              <div key={rt.id||i} className="bg-slate-50 rounded-xl p-4">
+                <div className="grid grid-cols-7 gap-3 items-end">
+                  <div className="col-span-3">
+                    <label className="text-xs font-bold text-slate-500 block mb-1">Nama Tipe</label>
+                    <input className={inp} placeholder="cth: Standard, AC, Deluxe..." value={rt.nama||""}
+                      onChange={e=>{const nr=[...(form.roomTypes)];nr[i]={...rt,nama:e.target.value};setForm({...form,roomTypes:nr});}}/>
+                  </div>
+                  <div className="col-span-3">
+                    <label className="text-xs font-bold text-slate-500 block mb-1">Harga / Bulan (Rp)</label>
+                    <input type="number" className={inp} value={rt.harga||0}
+                      onChange={e=>{const nr=[...(form.roomTypes)];nr[i]={...rt,harga:+e.target.value};setForm({...form,roomTypes:nr});}}/>
+                  </div>
+                  <div>
+                    <button onClick={()=>{
+                      if(count>0&&!confirm(`${count} kamar pakai tipe "${rt.nama}". Tetap hapus?`))return;
+                      setForm({...form,roomTypes:(form.roomTypes).filter((_,j)=>j!==i)});
+                    }} className="w-full p-2.5 bg-red-50 hover:bg-red-100 text-red-500 rounded-xl transition flex items-center justify-center">
+                      <Trash2 size={14}/>
+                    </button>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-400 mt-2">{count} kamar menggunakan tipe ini {rt.harga ? `· ${fRp(rt.harga)}/bln` : ""}</p>
+              </div>
+            );
+          })}
+          {(!form.roomTypes||form.roomTypes.length===0)&&(
+            <p className="text-sm text-slate-400 text-center py-4">Belum ada tipe. Klik tombol di atas untuk menambah.</p>
+          )}
+        </div>
+        <div className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-3 flex-wrap">
+          <Btn onClick={async()=>{
+            const types = form.roomTypes||[];
+            if(types.length===0) return alert("Belum ada tipe kamar.");
+            const updated = rooms.map(r=>{
+              const rt = types.find(t=>t.nama===r.tipe);
+              return rt ? {...r, harga:rt.harga} : r;
+            });
+            const changed = updated.filter((r,i)=>r.harga!==rooms[i].harga).length;
+            if(changed===0) return alert("Semua harga sudah sesuai tipe. Tidak ada perubahan.");
+            if(!confirm(`Update harga ${changed} kamar sesuai tipe masing-masing?`)) return;
+            await saveRooms(updated);
+            await addAudit("HARGA_BULK",`Harga ${changed} kamar diupdate sesuai tipe`);
+            alert(`✓ ${changed} kamar berhasil diupdate!`);
+          }}><Check size={16}/>Terapkan Harga ke Semua Kamar</Btn>
+          <p className="text-xs text-slate-400">Update harga kamar sesuai tipe masing-masing</p>
+        </div>
       </Card>
 
       <Card className="p-6">
