@@ -33,6 +33,20 @@ const _sess = (()=>{
 
 const DEF_USERS=[{id:"admin",nama:"Ricy Candra",role:"admin",password:"1234"},{id:"ricy",nama:"Ricy Candra",role:"investor",password:"1111"},{id:"arief",nama:"Arief Wahyudi",role:"investor",password:"2222"},{id:"ferry",nama:"Ferry Lukas",role:"investor",password:"3333"},{id:"staff",nama:"Karyawan Operasional",role:"staff",password:"0000"}];
 
+// Daftar menu yang bisa diatur aksesnya
+const MENU_KEYS = ["rooms","tenants","payments","expenses","invoices","mutasi","reports","bagihasil","settings","audit"];
+const MENU_LABELS = {rooms:"Kamar",tenants:"Penyewa",payments:"Pembayaran",expenses:"Kas & Keluar",invoices:"Invoice",mutasi:"Mutasi Keuangan",reports:"Laporan",bagihasil:"Bagi Hasil",settings:"Pengaturan",audit:"Log Aktivitas"};
+
+// Permission default per role - dipakai jika user tidak punya perms custom
+const DEFAULT_PERMS = {
+  admin:    {rooms:"edit",tenants:"edit",payments:"edit",expenses:"edit",invoices:"edit",mutasi:"edit",reports:"edit",bagihasil:"edit",settings:"edit",audit:"edit"},
+  investor: {rooms:"view",tenants:"view",payments:"view",expenses:"view",invoices:"view",mutasi:"view",reports:"view",bagihasil:"none",settings:"none",audit:"view"},
+  staff:    {rooms:"view",tenants:"edit",payments:"edit",expenses:"edit",invoices:"edit",mutasi:"none",reports:"none",bagihasil:"none",settings:"none",audit:"none"},
+};
+
+const getPerms = (u) => u?.perms || DEFAULT_PERMS[u?.role] || {};
+
+
 const DEF = {
   kasOperasional: 10000000,
   feeManager: 10,
@@ -171,7 +185,7 @@ function Layout({ children, page, setPage, role, user, onLogout, expenses, open,
     { id:"bagihasil", icon:TrendingUp,label:"Bagi Hasil",      roles:["admin"] },
     { id:"settings",  icon:Settings,  label:"Pengaturan",      roles:["admin"] },
     { id:"audit",     icon:List,      label:"Log Aktivitas",   roles:["admin","investor"] },
-  ].filter(n => n.roles.includes(role));
+  ].filter(n => n.roles.includes(role) && (n.id==="dashboard" || !myPerms || myPerms[n.id]!=="none"));
 
   const pending = expenses.filter(e=>e.status==="pending").length;
   const uLabel = { admin:"Admin 👑", ricy:"Investor Ricy", arief:"Investor Arief", ferry:"Investor Ferry", staff:"Staff Operasional" }[user]||user;
@@ -361,7 +375,8 @@ function Dashboard({ role, user, rooms, tenants, payments, expenses, settings, s
 // ═══════════════════════════════════════════════
 // ROOMS PAGE
 // ═══════════════════════════════════════════════
-function RoomsPage({ role, rooms, tenants, payments, saveRooms, addAudit }) {
+function RoomsPage({ role, rooms, tenants, payments, saveRooms, addAudit, myPerms }) {
+  const canEdit = myPerms?.rooms==="edit";
   const [modal,   setModal]  = useState(null);
   const [form,    setForm]   = useState({});
   const [filter,  setFilter] = useState("semua");
@@ -389,7 +404,7 @@ function RoomsPage({ role, rooms, tenants, payments, saveRooms, addAudit }) {
     (filter==="semua" || r.status===filter) &&
     (lantai==="semua" || r.lantai===+lantai)
   );
-  const isAdmin = role==="admin";
+  const isAdmin = role==="admin" && canEdit;
 
   const openAdd = () => { setForm({nomor:"",lantai:1,tipe:"Standard",harga:0,status:"kosong"}); setModal("add"); };
   const openEdit = (r) => { setForm({...r}); setModal(r); };
@@ -517,7 +532,8 @@ function RoomsPage({ role, rooms, tenants, payments, saveRooms, addAudit }) {
 // ═══════════════════════════════════════════════
 // TENANTS PAGE
 // ═══════════════════════════════════════════════
-function TenantsPage({ role, rooms, tenants, saveTenants, saveRooms, addAudit }) {
+function TenantsPage({ role, rooms, tenants, saveTenants, saveRooms, addAudit, myPerms }) {
+  const canEdit = myPerms?.tenants==="edit";
   const [modal,   setModal]  = useState(null);
   const [form,    setForm]   = useState({});
   const [search,  setSearch] = useState("");
@@ -525,7 +541,7 @@ function TenantsPage({ role, rooms, tenants, saveTenants, saveRooms, addAudit })
   const [coForm,  setCoForm] = useState({dikembalikan:0,catatan:""});
   const [showAlumni, setShowAlumni] = useState(false);
   const [sortBy, setSortBy] = useState("nama");
-  const isEdit = role==="admin"||role==="staff";
+  const isEdit = (role==="admin"||role==="staff") && canEdit;
 
   const filtered = tenants
     .filter(t=>showAlumni ? !t.aktif : t.aktif)
@@ -694,12 +710,13 @@ function TenantsPage({ role, rooms, tenants, saveTenants, saveRooms, addAudit })
 // ═══════════════════════════════════════════════
 // PAYMENTS PAGE
 // ═══════════════════════════════════════════════
-function PaymentsPage({ role, user, rooms, tenants, payments, savePayments, addAudit }) {
+function PaymentsPage({ role, user, rooms, tenants, payments, savePayments, addAudit , myPerms }) {
+  const canEdit = myPerms?.payments==="edit";
   const [modal,  setModal]  = useState(false);
   const [form,   setForm]   = useState({});
   const [fBulan, setFBulan] = useState(String(new Date().getMonth()+1).padStart(2,"0"));
   const [fTahun, setFTahun] = useState(String(new Date().getFullYear()));
-  const isEdit = role==="admin"||role==="staff";
+  const isEdit = (role==="admin"||role==="staff") && canEdit;
   const fMonth = `${fTahun}-${fBulan}`;
   const bulanList = [{v:"01",l:"Januari"},{v:"02",l:"Februari"},{v:"03",l:"Maret"},{v:"04",l:"April"},{v:"05",l:"Mei"},{v:"06",l:"Juni"},{v:"07",l:"Juli"},{v:"08",l:"Agustus"},{v:"09",l:"September"},{v:"10",l:"Oktober"},{v:"11",l:"November"},{v:"12",l:"Desember"}];
   const tahunList = Array.from({length:3},(_,i)=>String(new Date().getFullYear()-i));
@@ -828,7 +845,8 @@ function PaymentsPage({ role, user, rooms, tenants, payments, savePayments, addA
 // ═══════════════════════════════════════════════
 // EXPENSES PAGE
 // ═══════════════════════════════════════════════
-function ExpensesPage({ role, user, expenses, saveExpenses, addAudit }) {
+function ExpensesPage({ role, user, expenses, saveExpenses, addAudit, myPerms }) {
+  const canEdit = myPerms?.expenses==="edit";
   const [modal,  setModal]  = useState(false);
   const [form,   setForm]   = useState({});
   const [fBulan, setFBulan] = useState(String(new Date().getMonth()+1).padStart(2,"0"));
@@ -836,7 +854,7 @@ function ExpensesPage({ role, user, expenses, saveExpenses, addAudit }) {
   const fMonth = `${fTahun}-${fBulan}`;
   const bulanList = [{v:"01",l:"Januari"},{v:"02",l:"Februari"},{v:"03",l:"Maret"},{v:"04",l:"April"},{v:"05",l:"Mei"},{v:"06",l:"Juni"},{v:"07",l:"Juli"},{v:"08",l:"Agustus"},{v:"09",l:"September"},{v:"10",l:"Oktober"},{v:"11",l:"November"},{v:"12",l:"Desember"}];
   const tahunList = Array.from({length:3},(_,i)=>String(new Date().getFullYear()-i));
-  const isEdit = role==="admin"||role==="staff";
+  const isEdit = (role==="admin"||role==="staff") && canEdit;
   const isInv  = role==="admin"||role==="investor";
   const ms = months6();
 
@@ -1191,6 +1209,7 @@ function ReportsPage({ rooms, tenants, payments, expenses, settings, audit, kasT
 
 // ═══════════════════════════════════════════════
 function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, saveRooms, users, saveUsers }) {
+  const [permsModal, setPermsModal] = useState(null);
   const [form, setForm]    = useState({...settings, kepemilikan:{...settings.kepemilikan}});
   const [pins, setPins]    = useState({...settings.pins});
   const [saved, setSaved]  = useState(false);
@@ -1510,6 +1529,9 @@ function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, 
                 }} className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold rounded-lg border border-slate-200">
                   Edit
                 </button>
+                <button onClick={()=>setPermsModal(u)} className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-lg">
+                  Akses
+                </button>
                 {u.id!=="admin"&&u.id!==user&&(
                   <button onClick={()=>{
                     if(!confirm(`Hapus user ${u.nama} (${u.id})?`))return;
@@ -1575,6 +1597,66 @@ function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, 
           </button>
         </div>
       </Card>
+
+      {/* Modal Atur Akses */}
+      {permsModal && (() => {
+        const currentPerms = permsModal.perms || DEFAULT_PERMS[permsModal.role] || {};
+        const [draft,setDraft] = [currentPerms, (newP)=>{
+          const updated = (users||[]).map(x=>x.id===permsModal.id?{...x,perms:newP}:x);
+          saveUsers(updated);
+          setPermsModal({...permsModal, perms:newP});
+        }];
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
+              <div className="p-6 border-b border-slate-100">
+                <h2 className="text-xl font-black text-slate-900">Atur Akses</h2>
+                <p className="text-sm text-slate-500 mt-1">{permsModal.nama} ({permsModal.id})</p>
+              </div>
+              <div className="p-6 overflow-y-auto flex-1">
+                <div className="grid grid-cols-4 gap-2 text-xs font-bold text-slate-500 uppercase mb-2 px-2">
+                  <span>Menu</span>
+                  <span className="text-center">Tidak</span>
+                  <span className="text-center">Lihat</span>
+                  <span className="text-center">Edit</span>
+                </div>
+                {MENU_KEYS.map(m=>(
+                  <div key={m} className="grid grid-cols-4 gap-2 items-center py-2 border-b border-slate-50 hover:bg-slate-50 rounded-lg px-2">
+                    <span className="text-sm font-bold text-slate-700">{MENU_LABELS[m]}</span>
+                    {["none","view","edit"].map(v=>(
+                      <label key={v} className="flex justify-center cursor-pointer">
+                        <input type="radio" name={m} value={v} checked={draft[m]===v}
+                          onChange={()=>{ const np={...draft,[m]:v}; setDraft(np); }}
+                          className="w-4 h-4 accent-blue-600"/>
+                      </label>
+                    ))}
+                  </div>
+                ))}
+                <p className="text-xs text-slate-400 mt-4">
+                  <strong>Tidak</strong>: menu tersembunyi · <strong>Lihat</strong>: bisa buka, tidak bisa edit · <strong>Edit</strong>: bisa edit/hapus/tambah
+                </p>
+              </div>
+              <div className="p-4 border-t border-slate-100 flex justify-end gap-2">
+                <button onClick={()=>{
+                  const updated = (users||[]).map(x=>x.id===permsModal.id?{...x,perms:DEFAULT_PERMS[x.role]||{}}:x);
+                  saveUsers(updated);
+                  setPermsModal(null);
+                  addAudit("USER_PERMS_RESET", `Akses ${permsModal.id} di-reset ke default`);
+                }} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl">
+                  Reset ke Default
+                </button>
+                <button onClick={()=>{
+                  addAudit("USER_PERMS_EDIT", `Akses ${permsModal.id} diupdate`);
+                  setPermsModal(null);
+                }} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl">
+                  Selesai
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
     </div>
   );
 }
@@ -1721,7 +1803,8 @@ function InvoicePublicView({ inv }) {
 // ═══════════════════════════════════════════════
 // INVOICES PAGE
 // ═══════════════════════════════════════════════
-function InvoicesPage({ role, user, rooms, tenants, settings, addAudit, audit }) {
+function InvoicesPage({ role, user, rooms, tenants, settings, addAudit, audit , myPerms }) {
+  const canEdit = myPerms?.invoices==="edit";
   const [invoices, setInvs]  = useState([]);
   const [modal,    setModal] = useState(null);
   const [form,     setForm]  = useState({});
@@ -1732,7 +1815,7 @@ function InvoicesPage({ role, user, rooms, tenants, settings, addAudit, audit })
   const [multiModal,setMultiModal]=useState(null);
   const [multiMonths,setMultiMonths]=useState(3);
 
-  const isEdit = role==="admin"||role==="staff";
+  const isEdit = (role==="admin"||role==="staff") && canEdit;
 
   useEffect(()=>{
     store.get("km-invoices").then(d=>{ setInvs(toArr(d)||[]); setLI(false); });
@@ -2269,7 +2352,8 @@ function StatusBayarPage({ rooms, tenants, payments }) {
 }
 
 
-function BagiHasilPage({ settings, payments, expenses, kasTx, bagiHasil, saveBagiHasil, addAudit, user }) {
+function BagiHasilPage({ settings, payments, expenses, kasTx, bagiHasil, saveBagiHasil, addAudit, user, myPerms }) {
+  const canEdit = myPerms?.bagihasil==="edit";
   const [nominal, setNominal] = useState("");
   const fRp = (n)=>"Rp "+Math.round(n||0).toLocaleString("id-ID");
   const fD = (d)=>d?new Date(d).toLocaleDateString("id-ID",{day:"2-digit",month:"long",year:"numeric"}):"-";
@@ -2335,8 +2419,8 @@ function BagiHasilPage({ settings, payments, expenses, kasTx, bagiHasil, saveBag
         <p className="text-blue-200 text-xs mt-2">Tersedia untuk dibagi</p>
       </div>
 
-      {/* Input nominal */}
-      <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
+      {/* Input nominal - hanya untuk yang punya akses edit */}
+      {canEdit && <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
         <h2 className="font-black text-slate-900 mb-4">Eksekusi Bagi Hasil Baru</h2>
         <div className="space-y-4">
           <div>
@@ -2387,7 +2471,7 @@ function BagiHasilPage({ settings, payments, expenses, kasTx, bagiHasil, saveBag
             Eksekusi Bagi Hasil
           </button>
         </div>
-      </div>
+      </div>}
 
       {/* Riwayat */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
@@ -2410,9 +2494,9 @@ function BagiHasilPage({ settings, payments, expenses, kasTx, bagiHasil, saveBag
                     <span>Ferry: <span className="font-bold text-slate-700">{fRp(b.distribusi?.ferry||0)}</span></span>
                   </div>
                 </div>
-                <button onClick={()=>batalkan(b)} className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold rounded-xl transition">
+                {canEdit && <button onClick={()=>batalkan(b)} className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold rounded-xl transition">
                   Batalkan
-                </button>
+                </button>}
               </div>
             ))}
           </div>
@@ -2422,7 +2506,8 @@ function BagiHasilPage({ settings, payments, expenses, kasTx, bagiHasil, saveBag
   );
 }
 
-function MutasiBankKasPage({ settings, saveSettings, payments, expenses, rooms, tenants, addAudit, user, role, kasTx, saveKas, bagiHasil }) {
+function MutasiBankKasPage({ settings, saveSettings, payments, expenses, rooms, tenants, addAudit, user, role, kasTx, saveKas, bagiHasil, myPerms }) {
+  const canEdit = myPerms?.mutasi==="edit";
   const [tab,setTab]=useState("bank");
   const [fMonth,setFMonth]=useState("");
   const ms=Array.from({length:6},(_,i)=>{const d=new Date();d.setMonth(d.getMonth()-i);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;});
@@ -2449,7 +2534,7 @@ function MutasiBankKasPage({ settings, saveSettings, payments, expenses, rooms, 
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div><h1 className="text-2xl font-black text-slate-900">Mutasi Keuangan</h1><p className="text-slate-400 text-sm">Bank & Kas Operasional</p></div>
-        {role==="admin"&&<button onClick={async()=>{const j=prompt("Jumlah transfer Bank ke Kas:");if(!j||isNaN(j))return;const tx={id:Math.random().toString(36).substr(2),tanggal:new Date().toISOString().split("T")[0],tipe:"masuk",jumlah:+j,deskripsi:"Transfer dari Bank",inputBy:user,inputAt:new Date().toISOString()};await saveKas([...(kasTx||[]),tx]);alert("Transfer berhasil!");}} className="px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded-xl">Transfer Bank→Kas</button>}
+        {role==="admin"&&canEdit&&<button onClick={async()=>{const j=prompt("Jumlah transfer Bank ke Kas:");if(!j||isNaN(j))return;const tx={id:Math.random().toString(36).substr(2),tanggal:new Date().toISOString().split("T")[0],tipe:"masuk",jumlah:+j,deskripsi:"Transfer dari Bank",inputBy:user,inputAt:new Date().toISOString()};await saveKas([...(kasTx||[]),tx]);alert("Transfer berhasil!");}} className="px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded-xl">Transfer Bank→Kas</button>}
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[["Saldo Bank",fRp(bankAkhir),"text-blue-600"],["Saldo Kas",fRp(kasAkhir),"text-amber-600"],
@@ -2570,7 +2655,9 @@ export default function App() {
   };
 
   const saveBagiHasil = async (d)=>{setBagiHasil(d); await store.set(SK.BH,d);};
-  const ctx={role,user,settings,rooms,tenants,payments,expenses,audit,users,kasTx,bagiHasil,
+  const currentUser = (users||[]).find(u=>u.id===user) || {role,id:user};
+  const myPerms = getPerms(currentUser);
+  const ctx={role,user,settings,rooms,tenants,payments,expenses,audit,users,kasTx,bagiHasil,myPerms,
     saveSettings:save.settings,saveRooms:save.rooms,saveTenants:save.tenants,
     savePayments:save.payments,saveExpenses:save.expenses,addAudit,saveUsers,saveKas,saveBagiHasil};
 
@@ -2584,19 +2671,19 @@ export default function App() {
   // Logged in — show app
   return (
     <Layout page={page} setPage={setPage} role={role} user={user} onLogout={logout}
-            expenses={expenses} open={open} setOpen={setOpen}>
+            expenses={expenses} open={open} setOpen={setOpen} myPerms={myPerms}>
       {page==="dashboard" && <Dashboard {...ctx} setPage={setPage}/>}
-      {page==="rooms"     && <RoomsPage {...ctx}/>}
-      {page==="tenants"   && <TenantsPage {...ctx}/>}
-      {page==="payments"  && <PaymentsPage {...ctx}/>}
-      {page==="expenses"  && <ExpensesPage {...ctx}/>}
-      {page==="invoices"  && <InvoicesPage {...ctx}/>}
+      {page==="rooms"     && myPerms.rooms!=="none"     && <RoomsPage {...ctx}/>}
+      {page==="tenants"   && myPerms.tenants!=="none"   && <TenantsPage {...ctx}/>}
+      {page==="payments"  && myPerms.payments!=="none"  && <PaymentsPage {...ctx}/>}
+      {page==="expenses"  && myPerms.expenses!=="none"  && <ExpensesPage {...ctx}/>}
+      {page==="invoices"  && myPerms.invoices!=="none"  && <InvoicesPage {...ctx}/>}
       {page==="status"    && <StatusBayarPage {...ctx}/>}
-      {page==="mutasi"    && (role==="admin"||role==="investor") && <MutasiBankKasPage {...ctx}/>}
-      {page==="bagihasil" && role==="admin" && <BagiHasilPage {...ctx}/>}
-      {page==="reports"   && (role==="admin"||role==="investor") && <ReportsPage {...ctx}/>}
-      {page==="settings"  && role==="admin" && <SettingsPage {...ctx} onReset={resetData}/>}
-      {page==="audit"     && (role==="admin"||role==="investor") && <AuditPage {...ctx}/>}
+      {page==="mutasi"    && myPerms.mutasi!=="none"    && <MutasiBankKasPage {...ctx}/>}
+      {page==="bagihasil" && myPerms.bagihasil!=="none" && <BagiHasilPage {...ctx}/>}
+      {page==="reports"   && myPerms.reports!=="none"   && <ReportsPage {...ctx}/>}
+      {page==="settings"  && myPerms.settings==="edit"  && <SettingsPage {...ctx} onReset={resetData}/>}
+      {page==="audit"     && myPerms.audit!=="none"     && <AuditPage {...ctx}/>}
     </Layout>
   );
 }
