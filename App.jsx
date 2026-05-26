@@ -1225,6 +1225,7 @@ function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, 
   const [form, setForm]    = useState({...settings, kepemilikan:{...settings.kepemilikan}});
   const [pins, setPins]    = useState({...settings.pins});
   const [saved, setSaved]  = useState(false);
+  const [bulkTipe, setBulkTipe] = useState("");
 
   // Floor config: { lantai: { prefix, count } }
   const initFloorCfg = () => {
@@ -1440,8 +1441,45 @@ function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, 
             <p className="text-sm text-slate-400 text-center py-4">Belum ada tipe. Klik tombol di atas untuk menambah.</p>
           )}
         </div>
-        <div className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-3 flex-wrap">
-          <Btn onClick={async()=>{
+        <div className="mt-4 pt-4 border-t border-slate-100 space-y-4">
+          {(()=>{
+            const types = form.roomTypes||[];
+            const typeNames = new Set(types.map(t=>t.nama).filter(Boolean));
+            const unmatched = rooms.filter(r=>!typeNames.has(r.tipe));
+            const unmatchedTypes = [...new Set(unmatched.map(r=>r.tipe||"(kosong)"))];
+            return unmatched.length>0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                <p className="text-sm font-bold text-amber-700 mb-1">⚠ {unmatched.length} kamar punya tipe yang tidak terdaftar</p>
+                <p className="text-xs text-amber-600">Tipe lama: {unmatchedTypes.join(", ")}</p>
+              </div>
+            );
+          })()}
+          <div className="bg-blue-50 rounded-xl p-4">
+            <p className="text-xs font-black text-blue-700 uppercase tracking-widest mb-3">Set Semua Kamar Sekaligus</p>
+            <div className="flex items-end gap-3 flex-wrap">
+              <div className="flex-1 min-w-[200px]">
+                <label className="text-xs font-bold text-slate-600 block mb-1">Pilih Tipe</label>
+                <select className={inp} value={bulkTipe} onChange={e=>setBulkTipe(e.target.value)}>
+                  <option value="">— Pilih tipe —</option>
+                  {(form.roomTypes||[]).filter(t=>t.nama).map(t=><option key={t.id} value={t.nama}>{t.nama} — {fRp(t.harga)}/bln</option>)}
+                </select>
+              </div>
+              <Btn disabled={!bulkTipe} onClick={async()=>{
+                const types = form.roomTypes||[];
+                const rt = types.find(t=>t.nama===bulkTipe);
+                if(!rt) return;
+                if(!confirm(`Set SEMUA ${rooms.length} kamar ke tipe "${rt.nama}" dengan harga ${fRp(rt.harga)}/bulan?`)) return;
+                const updated = rooms.map(r=>({...r, tipe:rt.nama, harga:rt.harga}));
+                await saveRooms(updated);
+                await addAudit("TIPE_BULK",`Semua ${rooms.length} kamar diset ke tipe "${rt.nama}" — ${fRp(rt.harga)}`);
+                alert(`✓ ${rooms.length} kamar diset ke "${rt.nama}" — ${fRp(rt.harga)}/bln`);
+              }}>
+                <Check size={16}/>Terapkan ke Semua Kamar
+              </Btn>
+            </div>
+            <p className="text-xs text-blue-500 mt-2">Mengubah tipe DAN harga semua kamar sekaligus ke tipe yang dipilih.</p>
+          </div>
+          <Btn v="secondary" onClick={async()=>{
             const types = form.roomTypes||[];
             if(types.length===0) return alert("Belum ada tipe kamar.");
             const updated = rooms.map(r=>{
@@ -1449,13 +1487,13 @@ function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, 
               return rt ? {...r, harga:rt.harga} : r;
             });
             const changed = updated.filter((r,i)=>r.harga!==rooms[i].harga).length;
-            if(changed===0) return alert("Semua harga sudah sesuai tipe. Tidak ada perubahan.");
-            if(!confirm(`Update harga ${changed} kamar sesuai tipe masing-masing?`)) return;
+            if(changed===0) return alert("Tidak ada perubahan. Pastikan nama tipe kamar cocok dengan tipe di setting.");
+            if(!confirm(`Update harga ${changed} kamar yang tipenya cocok?`)) return;
             await saveRooms(updated);
-            await addAudit("HARGA_BULK",`Harga ${changed} kamar diupdate sesuai tipe`);
-            alert(`✓ ${changed} kamar berhasil diupdate!`);
-          }}><Check size={16}/>Terapkan Harga ke Semua Kamar</Btn>
-          <p className="text-xs text-slate-400">Update harga kamar sesuai tipe masing-masing</p>
+            await addAudit("HARGA_SYNC",`Harga ${changed} kamar di-sync sesuai tipe`);
+            alert(`✓ ${changed} kamar diupdate!`);
+          }}><RefreshCw size={16}/>Sync Harga Saja (Tipe Tidak Berubah)</Btn>
+          <p className="text-xs text-slate-400">Hanya update harga untuk kamar yang tipenya sudah cocok dengan setting.</p>
         </div>
       </Card>
 
