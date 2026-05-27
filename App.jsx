@@ -2062,6 +2062,10 @@ function InvoicesPage({ role, user, rooms, tenants, settings, addAudit, audit, m
   const [multiMonths,setMultiMonths]=useState(3);
   const [payModal,  setPayModal] = useState(null);
   const [payForm,   setPayForm]  = useState({amount:0,date:"",method:"transfer",bank:"",pengirim:"",referensi:"",catatan:""});
+  const [showGenerate, setShowGenerate] = useState(false);
+  const [showHistory, setShowHistory] = useState(true);
+  const [fStatus, setFStatus] = useState("semua");
+  const [fBulan, setFBulan] = useState("");
 
   const isEdit = canEdit;
 
@@ -2382,9 +2386,14 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
 
       {/* Quick generate table */}
       {isEdit&&(
-        <Card className="p-5">
-          <h2 className="font-black text-slate-900 mb-4">Generate Invoice per Penyewa</h2>
-          <div className="overflow-x-auto">
+        <Card className="overflow-hidden">
+          <button onClick={()=>setShowGenerate(!showGenerate)}
+            className="w-full px-5 py-4 flex items-center justify-between hover:bg-slate-50 transition">
+            <h2 className="font-black text-slate-900">Generate Invoice per Penyewa</h2>
+            <span className="text-slate-400 text-sm font-bold">{showGenerate?"▲ Tutup":"▼ Buka"}</span>
+          </button>
+          {showGenerate&&(
+          <div className="px-5 pb-5 overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr className="border-b border-slate-100">
                 {["Kamar","Nama","No HP","JT","Harga/Bln",""].map(h=>(
@@ -2419,6 +2428,7 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
               </tbody>
             </table>
           </div>
+          )}
         </Card>
       )}
 
@@ -2456,14 +2466,45 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
 
       {/* Invoice list */}
       <Card>
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-          <h2 className="font-black text-slate-900">Riwayat Invoice</h2>
-          <span className="text-xs text-slate-400 bg-slate-100 px-3 py-1 rounded-full font-bold">{invoices.length} invoice</span>
+        <button onClick={()=>setShowHistory(!showHistory)}
+          className="w-full px-6 py-4 border-b border-slate-100 flex items-center justify-between hover:bg-slate-50 transition">
+          <div className="flex items-center gap-3">
+            <h2 className="font-black text-slate-900">Riwayat Invoice</h2>
+            <span className="text-xs text-slate-400 bg-slate-100 px-3 py-1 rounded-full font-bold">{invoices.length} invoice</span>
+          </div>
+          <span className="text-slate-400 text-sm font-bold">{showHistory?"▲ Tutup":"▼ Buka"}</span>
+        </button>
+        {showHistory&&(<>
+        {/* Filters */}
+        <div className="px-6 py-3 border-b border-slate-100 flex items-center gap-3 flex-wrap bg-slate-50/50">
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-bold text-slate-500">Status:</label>
+            <select value={fStatus} onChange={e=>setFStatus(e.target.value)}
+              className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="semua">Semua</option>
+              <option value="lunas">Lunas</option>
+              <option value="sebagian">Sebagian</option>
+              <option value="belum">Belum Bayar</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-bold text-slate-500">Bulan:</label>
+            <input type="month" value={fBulan} onChange={e=>setFBulan(e.target.value)}
+              className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+            {fBulan&&<button onClick={()=>setFBulan("")} className="text-xs text-red-500 font-bold hover:underline">✕ Reset</button>}
+          </div>
         </div>
         {loadingInv&&<p className="text-center py-10 text-slate-400 text-sm">Memuat...</p>}
         {!loadingInv&&invoices.length===0&&<p className="text-center py-10 text-slate-400 text-sm">Belum ada invoice dibuat</p>}
         <div className="divide-y divide-slate-50">
-          {invoices.map(inv=>{
+          {invoices.filter(inv=>{
+            const lunas2 = isLunas(inv); const paid2 = getPaid(inv); const partial2 = paid2>0&&!lunas2;
+            if(fStatus==="lunas"&&!lunas2) return false;
+            if(fStatus==="sebagian"&&!partial2) return false;
+            if(fStatus==="belum"&&(lunas2||partial2)) return false;
+            if(fBulan&&!(inv.targetMonth||"").startsWith(fBulan)&&!(inv.dueDate||"").startsWith(fBulan)&&!(inv.generatedAt||"").startsWith(fBulan)) return false;
+            return true;
+          }).map(inv=>{
             const paid = getPaid(inv);
             const remaining = getRemaining(inv);
             const lunas = isLunas(inv);
@@ -2520,6 +2561,7 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
             );
           })}
         </div>
+        </>)}
       </Card>
 
       {/* WA Share Modal */}
