@@ -916,7 +916,7 @@ function PaymentsPage({ role, user, rooms, tenants, payments, savePayments, addA
             <tbody>
               {filtered.length===0&&<tr><td colSpan={8} className="text-center py-10 text-slate-400 text-sm">Belum ada pembayaran {mLbl(fMonth)}</td></tr>}
               {filtered.map(p=>{
-                const room=rooms.find(r=>r.id===p.kamarId); const t=tenants.find(t=>t.id===p.penyewaId);
+                const t=tenants.find(x=>x.id===p.penyewaId); const room=rooms.find(r=>r.id===p.kamarId)||rooms.find(r=>r.id===t?.kamarId);
                 return (
                   <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50/80 transition">
                     <td className="px-5 py-3.5 font-black text-blue-600">K-{room?.nomor||"—"}</td>
@@ -1155,7 +1155,7 @@ function ReportsPage({ rooms, tenants, payments, expenses, settings, audit, kasT
       title = "Laporan Pendapatan";
       body = `<h3>Total Pendapatan: ${fRp(totPendapatan)}</h3>
       <table><tr><th>Kamar</th><th>Penyewa</th><th>Tanggal</th><th class="right">Nominal</th></tr>
-      ${mPay.map(p=>{const r=rooms.find(x=>x.id===p.kamarId);const t=tenants.find(x=>x.id===p.penyewaId);return `<tr><td>K-${r?.nomor||"?"}</td><td>${t?.nama||"?"}</td><td>${fD(p.tanggal)}</td><td class="right">${fRp(p.nominal)}</td></tr>`;}).join("")}
+      ${mPay.map(p=>{const t=tenants.find(x=>x.id===p.penyewaId);const r=rooms.find(x=>x.id===p.kamarId)||rooms.find(x=>x.id===t?.kamarId);return `<tr><td>K-${r?.nomor||"?"}</td><td>${t?.nama||"?"}</td><td>${fD(p.tanggal)}</td><td class="right">${fRp(p.nominal)}</td></tr>`;}).join("")}
       </table>`;
     } else if (tab==="bank") {
       title = "Laporan Bank";
@@ -1225,7 +1225,7 @@ function ReportsPage({ rooms, tenants, payments, expenses, settings, audit, kasT
               <thead><tr className="border-b border-slate-100">{["Kamar","Penyewa","Tanggal","Nominal"].map(h=><th key={h} className="text-left px-5 py-3 text-xs font-bold text-slate-400 uppercase">{h}</th>)}</tr></thead>
               <tbody>
                 {mPay.length===0&&<tr><td colSpan={4} className="text-center py-8 text-slate-400">Belum ada pendapatan {mLbl(month)}</td></tr>}
-                {mPay.map(p=>{const rm=rooms.find(r=>r.id===p.kamarId);const t=tenants.find(x=>x.id===p.penyewaId);return(
+                {mPay.map(p=>{const t=tenants.find(x=>x.id===p.penyewaId);const rm=rooms.find(r=>r.id===p.kamarId)||rooms.find(r=>r.id===t?.kamarId);return(
                   <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50">
                     <td className="px-5 py-3 font-black text-blue-600">K-{rm?.nomor||"?"}</td>
                     <td className="px-5 py-3 font-bold">{t?.nama||"?"}</td>
@@ -2136,7 +2136,7 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
     const tm   = tMon();
     const per  = calcPeriode(t.jatuhTempo, tm);
     setForm({ tenantId:t.id, tenantName:t.nama, tenantHp:t.hp,
-      roomNomor:room?.nomor, roomTipe:room?.tipe||"Standard",
+      kamarId:t.kamarId, roomNomor:room?.nomor, roomTipe:room?.tipe||"Standard",
       nominal:room?.harga||0, targetMonth:tm, periode:per, dueDate:per.start });
     setModal(t);
   };
@@ -2941,7 +2941,7 @@ function MutasiBankKasPage({ settings, saveSettings, payments, expenses, rooms, 
   const fRp=(n)=>"Rp "+Math.round(n||0).toLocaleString("id-ID");
   const fD=(d)=>d?new Date(d).toLocaleDateString("id-ID",{day:"2-digit",month:"short",year:"numeric"}):"-";
 
-  const bankIn=payments.map(p=>{const rm=rooms.find(r=>r.id===p.kamarId);const t=tenants.find(x=>x.id===p.penyewaId);return{id:p.id,tanggal:p.tanggal,tipe:"masuk",jumlah:+p.nominal,desc:`Sewa K-${rm?.nomor||"?"} - ${t?.nama||"?"}`,periode:p.periode};});
+  const bankIn=payments.map(p=>{const t=tenants.find(x=>x.id===p.penyewaId);const rm=rooms.find(r=>r.id===p.kamarId)||rooms.find(r=>r.id===t?.kamarId);return{id:p.id,tanggal:p.tanggal,tipe:"masuk",jumlah:+p.nominal,desc:`Sewa K-${rm?.nomor||"?"} - ${t?.nama||"?"}`,periode:p.periode};});
   const bankOut=[...expenses.filter(e=>e.status==="approved"&&e.sumber==="bank").map(e=>({id:e.id,tanggal:e.tanggal,tipe:"keluar",jumlah:+e.nominal,desc:`${e.kategori}: ${e.deskripsi}`})),
     ...(kasTx||[]).filter(k=>k.tipe==="masuk").map(k=>({id:k.id+"b",tanggal:k.tanggal,tipe:"keluar",jumlah:+k.jumlah,desc:"Transfer ke Kas"})),
     ...(bagiHasil||[]).map(b=>({id:b.id+"bh",tanggal:b.tanggal,tipe:"keluar",jumlah:+b.nominal,desc:"Bagi Hasil Investor"}))];
