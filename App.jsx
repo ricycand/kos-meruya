@@ -2547,52 +2547,41 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
             const lunas = isLunas(inv);
             const partial = paid>0&&!lunas;
             return (
-            <div key={inv.id} className="px-6 py-4 hover:bg-slate-50/80 transition">
-              <div className="flex items-start justify-between gap-4 flex-wrap">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-black text-slate-800">{inv.invoiceNo}</span>
-                    {lunas&&<span className="text-xs font-bold bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-full">✓ Lunas</span>}
-                    {partial&&<span className="text-xs font-bold bg-amber-100 text-amber-700 px-2.5 py-1 rounded-full">Sebagian ({fRp(paid)}/{fRp(inv.nominal)})</span>}
-                    {!lunas&&!partial&&<span className="text-xs font-bold bg-red-100 text-red-600 px-2.5 py-1 rounded-full">Belum Bayar</span>}
-                  </div>
-                  <p className="font-bold text-slate-700 mt-1 text-sm">{inv.tenantName} · Kamar {inv.roomNomor}</p>
-                  <p className="text-xs text-slate-400 mt-0.5">{inv.periode?.label}</p>
-                  <p className="text-xs text-slate-400">JT: {fD(inv.dueDate)} · Dibuat {fD(inv.generatedAt)}</p>
-                  {/* Payment history */}
-                  {(inv.invPayments||[]).length>0&&(
-                    <div className="mt-2 space-y-1">
-                      {(inv.invPayments||[]).map(p=>(
-                        <p key={p.id} className="text-[11px] text-emerald-700 bg-emerald-50 px-2 py-1 rounded-lg inline-block mr-1">
-                          {fD(p.date)} · {fRp(p.amount)} · {p.method==="transfer"?"Transfer":"Cash"}{p.bank?` (${p.bank})`:""}
-                        </p>
-                      ))}
-                    </div>
-                  )}
+            <div key={inv.id} className="px-4 sm:px-6 py-4 hover:bg-slate-50/80 transition">
+              {/* Top: Invoice number + status + amount */}
+              <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-black text-slate-800 text-sm">{inv.invoiceNo}</span>
+                  {lunas&&<span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">✓ Lunas</span>}
+                  {partial&&<span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Sebagian ({fRp(paid)}/{fRp(inv.nominal)})</span>}
+                  {!lunas&&!partial&&<span className="text-[10px] font-bold bg-red-100 text-red-600 px-2 py-0.5 rounded-full">Belum Bayar</span>}
                 </div>
-                <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
-                  <div className="text-right mr-2">
-                    <span className="font-black text-slate-800">{fRp(inv.nominal)}</span>
-                    {!lunas&&paid>0&&<p className="text-xs font-bold text-red-500">Sisa: {fRp(remaining)}</p>}
-                  </div>
-                  {!lunas&&isEdit&&(
-                    <button onClick={()=>openPayModal(inv,"full")} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition">Bayar Penuh</button>
-                  )}
-                  {!lunas&&isEdit&&(
-                    <button onClick={()=>openPayModal(inv,"partial")} className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl transition">Sebagian</button>
-                  )}
-                  {!lunas&&isEdit&&(
-                    <button onClick={()=>cancelInvoice(inv)} className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold rounded-xl transition">✕ Batal</button>
-                  )}
-                  <button onClick={()=>printInvoice(inv)}
-                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition">
-                    🖨 PDF
-                  </button>
-                  {!lunas&&<button onClick={()=>showShare(inv)}
-                    className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-xl transition">
-                    💬 WA
-                  </button>}
+                <div className="text-right">
+                  <span className="font-black text-slate-800">{fRp(inv.nominal)}</span>
+                  {!lunas&&paid>0&&<p className="text-xs font-bold text-red-500">Sisa: {fRp(remaining)}</p>}
                 </div>
+              </div>
+              {/* Info */}
+              <p className="text-sm font-bold text-slate-700">{inv.tenantName} · K-{inv.roomNomor}</p>
+              <p className="text-xs text-slate-400">{inv.periode?.label}</p>
+              <p className="text-xs text-slate-400">JT: {fD(inv.dueDate)} · Dibuat {fD(inv.generatedAt)}</p>
+              {/* Payment history */}
+              {(inv.invPayments||[]).length>0&&(
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {(inv.invPayments||[]).map(p=>(
+                    <span key={p.id} className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg">
+                      {fD(p.date)} · {fRp(p.amount)} · {p.method==="transfer"?"Transfer":"Cash"}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {/* Buttons */}
+              <div className="flex items-center gap-1.5 mt-3 flex-wrap">
+                {!lunas&&isEdit&&<button onClick={()=>openPayModal(inv,"full")} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition">Bayar Penuh</button>}
+                {!lunas&&isEdit&&<button onClick={()=>openPayModal(inv,"partial")} className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl transition">Sebagian</button>}
+                {!lunas&&isEdit&&<button onClick={()=>cancelInvoice(inv)} className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold rounded-xl transition">✕ Batal</button>}
+                <button onClick={()=>printInvoice(inv)} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition">🖨 PDF</button>
+                {!lunas&&<button onClick={()=>showShare(inv)} className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-xl transition">💬 WA</button>}
               </div>
             </div>
             );
