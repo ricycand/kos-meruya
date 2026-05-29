@@ -2095,18 +2095,20 @@ function InvoicesPage({ role, user, rooms, tenants, settings, addAudit, audit, m
     await store.set("km-invoices", data);
   };
 
-  const calcPeriode = (jatuhTempo, targetMonth) => {
-    const [y,m] = (targetMonth||tMon()).split("-").map(Number);
-    const jt = +jatuhTempo||1;
-    const start = new Date(y, m-1, jt);
-    // end = jt-1 of next month (or last day if jt=1)
-    const endDate = jt>1 ? new Date(y, m, jt-1) : new Date(y, m, 0);
-    const fmt = (d) => d.toLocaleDateString("id-ID",{day:"numeric",month:"long",year:"numeric"});
-    return {
-      start: start.toISOString().split("T")[0],
-      end:   endDate.toISOString().split("T")[0],
-      label: `${fmt(start)} – ${fmt(endDate)}`
-    };
+  const fmtDate = (d) => d.toLocaleDateString("id-ID",{day:"numeric",month:"long",year:"numeric"});
+
+  const calcNextPeriode = (tenant, numMonths=1) => {
+    const tenantInvs = invoices.filter(i=>i.tenantId===tenant.id).sort((a,b)=>new Date(a.periode?.end||0)-new Date(b.periode?.end||0));
+    let start;
+    if(tenantInvs.length===0) {
+      start = new Date(tenant.tanggalMasuk);
+    } else {
+      const lastEnd = new Date(tenantInvs[tenantInvs.length-1].periode?.end);
+      start = new Date(lastEnd); start.setDate(start.getDate()+1);
+    }
+    const end = new Date(start); end.setMonth(end.getMonth()+numMonths); end.setDate(end.getDate()-1);
+    const ym = `${start.getFullYear()}-${String(start.getMonth()+1).padStart(2,"0")}`;
+    return { start:start.toISOString().split("T")[0], end:end.toISOString().split("T")[0], label:`${fmtDate(start)} – ${fmtDate(end)}`, targetMonth:ym };
   };
 
   const genWAMsg = (inv) => {
@@ -2145,18 +2147,14 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
 
   const openGenerate = (t) => {
     const room = rooms.find(r=>r.id===t.kamarId);
-    const tm   = tMon();
-    const per  = calcPeriode(t.jatuhTempo, tm);
+    const per = calcNextPeriode(t);
     setForm({ tenantId:t.id, tenantName:t.nama, tenantHp:t.hp,
       kamarId:t.kamarId, roomNomor:room?.nomor, roomTipe:room?.tipe||"Standard",
-      nominal:room?.harga||0, targetMonth:tm, periode:per, dueDate:per.start });
+      nominal:room?.harga||0, targetMonth:per.targetMonth, periode:per, dueDate:per.start });
     setModal(t);
   };
 
-  const updateMonth = (tm) => {
-    const per = calcPeriode(modal.jatuhTempo, tm);
-    setForm(f=>({...f, targetMonth:tm, periode:per, dueDate:per.start}));
-  };
+  const updateMonth = null; // removed - periode auto-calculated
 
   const nextInvNo = (tm) => {
     const key = tm.replace("-","");
@@ -2185,22 +2183,13 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
     const room = rooms.find(r=>r.id===t.kamarId);
     if (!room?.harga) return alert("Set harga kamar terlebih dahulu.");
     const n = +multiMonths;
-    const today = new Date();
-    const startTm = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}`;
-    const startPer = calcPeriode(t.jatuhTempo, startTm);
-    const endD = new Date(today.getFullYear(), today.getMonth()+n, t.jatuhTempo-1);
-    const endLabel = endD.toLocaleDateString("id-ID",{day:"numeric",month:"long",year:"numeric"});
+    const per = calcNextPeriode(t, n);
     const totalNominal = room.harga * n;
-    const per = {
-      start: startPer.start,
-      end: endD.toISOString().split("T")[0],
-      label: `${startPer.label.split(" – ")[0]} – ${endLabel}`
-    };
     const inv = {
-      id:uid(), invoiceNo:nextInvNo(startTm),
+      id:uid(), invoiceNo:nextInvNo(per.targetMonth),
       tenantId:t.id, tenantName:t.nama, tenantHp:t.hp,
       kamarId:t.kamarId, roomNomor:room.nomor, roomTipe:room.tipe||"Standard",
-      nominal:totalNominal, targetMonth:startTm, periode:per, dueDate:per.start,
+      nominal:totalNominal, targetMonth:per.targetMonth, periode:per, dueDate:per.start,
       multiBulan:n, hargaPerBulan:room.harga,
       bankAccounts:settings.bankAccounts||[], companyInfo:settings.companyInfo||{name:"Kos Meruya"},
       generatedBy:user, generatedAt:now(), paid:false,
@@ -2210,7 +2199,7 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
     await addAudit("INVOICE_MULTI", `Invoice ${n} bulan untuk ${t.nama} (${inv.invoiceNo}) - ${fRp(totalNominal)}`);
     setMultiModal(null);
     alert(`✅ Invoice ${n} bulan berhasil dibuat!\nTotal: ${fRp(totalNominal)}`);
-  };;
+  };
 
   const cancelInvoice = async (inv) => {
     if (!confirm(`Batalkan invoice ${inv.invoiceNo} untuk ${inv.tenantName}?\nInvoice akan dihapus permanen.`)) return;
@@ -2669,17 +2658,10 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
               <div><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">No HP</p><p className="font-bold text-slate-700">{form.tenantHp}</p></div>
             </div>
 
-            <div>
-              <label className="text-xs font-black text-slate-600 block mb-1">Bulan Tagihan</label>
-              <select className={inp} value={form.targetMonth} onChange={e=>updateMonth(e.target.value)}>
-                {ms.map(m=><option key={m} value={m}>{mLbl(m)}</option>)}
-              </select>
-            </div>
-
             <div className="bg-blue-50 rounded-xl p-4">
-              <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1">Periode Tagihan Otomatis</p>
+              <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1">Periode Tagihan</p>
               <p className="font-black text-slate-800 text-lg">{form.periode?.label}</p>
-              <p className="text-xs text-slate-400 mt-1">Dihitung dari jatuh tempo tgl {modal.jatuhTempo} setiap bulan</p>
+              <p className="text-xs text-slate-400 mt-1">Dihitung otomatis dari tanggal masuk penyewa</p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
