@@ -102,7 +102,7 @@ function Modal({ title, onClose, children, size="md" }) {
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
          onClick={e=>e.target===e.currentTarget&&onClose()}>
-      <div className={`bg-white rounded-2xl shadow-2xl w-full ${s[size]} max-h-[90vh] overflow-y-auto`}>
+      <div className={`bg-white rounded-2xl shadow-2xl w-full ${s[size]} max-h-[90vh] overflow-y-auto mx-2 sm:mx-0`}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 sticky top-0 bg-white z-10 rounded-t-2xl">
           <h2 className="font-bold text-slate-800 text-lg">{title}</h2>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-600 transition"><X size={18}/></button>
@@ -193,11 +193,15 @@ function Layout({ children, page, setPage, role, user, onLogout, expenses, open,
 
   const pending = expenses.filter(e=>e.status==="pending").length;
   const uLabel = { admin:"Admin 👑", ricy:"Investor Ricy", arief:"Investor Arief", ferry:"Investor Ferry", staff:"Staff Operasional" }[user]||user;
+  const navClick = (id) => { setPage(id); if(window.innerWidth<768) setOpen(false); };
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden font-sans">
+      {/* Mobile backdrop */}
+      {open && <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={()=>setOpen(false)}/>}
+
       {/* Sidebar */}
-      <aside className={`${open?"w-60":"w-16"} bg-slate-900 flex flex-col flex-shrink-0 transition-all duration-300 ease-in-out`}>
+      <aside className={`fixed md:relative z-50 h-full bg-slate-900 flex flex-col flex-shrink-0 transition-all duration-300 ease-in-out ${open?"w-60 translate-x-0":"-translate-x-full md:translate-x-0 w-60 md:w-16"}`}>
         <div className="flex items-center justify-between px-4 py-5 border-b border-slate-700/50">
           {open && (
             <div>
@@ -215,7 +219,7 @@ function Layout({ children, page, setPage, role, user, onLogout, expenses, open,
             const Icon = n.icon;
             const active = page === n.id;
             return (
-              <button key={n.id} onClick={()=>setPage(n.id)}
+              <button key={n.id} onClick={()=>navClick(n.id)}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${active ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
                 <div className="relative flex-shrink-0">
                   <Icon size={18}/>
@@ -239,8 +243,14 @@ function Layout({ children, page, setPage, role, user, onLogout, expenses, open,
       </aside>
 
       {/* Main */}
-      <main className="flex-1 overflow-y-auto">
-        <div className="p-6 max-w-7xl mx-auto min-h-full">
+      <main className="flex-1 overflow-y-auto w-full">
+        {/* Mobile top bar */}
+        <div className="md:hidden sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200 px-4 py-3 flex items-center justify-between">
+          <button onClick={()=>setOpen(true)} className="p-1.5 hover:bg-slate-100 rounded-lg transition"><Menu size={20} className="text-slate-700"/></button>
+          <p className="font-black text-slate-900 text-sm">Kos Meruya</p>
+          <button onClick={onLogout} className="p-1.5 hover:bg-slate-100 rounded-lg transition"><LogOut size={18} className="text-slate-400"/></button>
+        </div>
+        <div className="p-3 md:p-6 max-w-7xl mx-auto min-h-full">
           {children}
         </div>
       </main>
@@ -287,11 +297,11 @@ function Dashboard({ role, user, rooms, tenants, payments, expenses, settings, s
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-black text-slate-900">Dashboard</h1>
+        <h1 className="text-xl sm:text-2xl font-black text-slate-900">Dashboard</h1>
         <p className="text-slate-400 text-sm mt-0.5">{mLbl(cm)} · {today.toLocaleDateString("id-ID",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</p>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {STATS.map(s => (
           <Card key={s.label} className="p-5">
             <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{s.label}</p>
@@ -305,7 +315,7 @@ function Dashboard({ role, user, rooms, tenants, payments, expenses, settings, s
         <Card className="p-6">
           <h2 className="font-black text-slate-900 mb-1">Estimasi Bagi Hasil</h2>
           <p className="text-slate-400 text-sm mb-5">{mLbl(cm)}</p>
-          <div className="grid grid-cols-3 gap-4 mb-5">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
             {[{n:"Ricy Candra",k:"ricy",p:k.ricy},{n:"Arief Wahyudi",k:"arief",p:k.arief},{n:"Ferry Lukas",k:"ferry",p:k.ferry,fee:true}].map(inv=>(
               <div key={inv.k} className={`rounded-2xl p-4 ${user===inv.k||user==="admin"?"bg-blue-50 border-2 border-blue-200":"bg-slate-50"}`}>
                 <p className="font-bold text-slate-800 text-sm">{inv.n}</p>
@@ -438,7 +448,7 @@ function RoomsPage({ role, rooms, tenants, payments, saveRooms, addAudit, myPerm
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-black text-slate-900">Kamar</h1>
+          <h1 className="text-xl sm:text-2xl font-black text-slate-900">Kamar</h1>
           <p className="text-slate-400 text-sm">{rooms.length} kamar total</p>
         </div>
         {isAdmin && <Btn onClick={openAdd}><Plus size={16}/>Tambah Kamar</Btn>}
@@ -478,7 +488,7 @@ function RoomsPage({ role, rooms, tenants, payments, saveRooms, addAudit, myPerm
         {filter!=="semua" && ` · status: ${filter}`}
       </p>
 
-      <div className="grid grid-cols-5 sm:grid-cols-7 md:grid-cols-9 lg:grid-cols-11 gap-2">
+      <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-7 lg:grid-cols-9 xl:grid-cols-11 gap-2">
         {filtered.map(r => {
           const st = getRoomStatus(r);
           const t = tenants.find(x=>x.id===r.penyewaId);
@@ -503,12 +513,12 @@ function RoomsPage({ role, rooms, tenants, payments, saveRooms, addAudit, myPerm
                 value={form.nomor||""} onChange={e=>setForm({...form,nomor:e.target.value})}/>
               <p className="text-xs text-blue-500 mt-1">Kode ini yang tampil di grid kamar</p>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div><label className="text-xs font-bold text-slate-600 block mb-1">Lantai</label>
                 <select className={inp} value={form.lantai||1} onChange={e=>setForm({...form,lantai:+e.target.value})}>
                   {[1,2,3,4].map(l=><option key={l} value={l}>Lantai {l}</option>)}</select></div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div><label className="text-xs font-bold text-slate-600 block mb-1">Tipe</label>
                 <select className={inp} value={form.tipe||""} onChange={e=>{
                   const tipe=e.target.value;
@@ -648,7 +658,7 @@ function TenantsPage({ role, rooms, tenants, saveTenants, saveRooms, addAudit, m
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <div><h1 className="text-2xl font-black text-slate-900">Penyewa</h1>
+        <div><h1 className="text-xl sm:text-2xl font-black text-slate-900">Penyewa</h1>
           <p className="text-slate-400 text-sm">{tenants.filter(t=>t.aktif).length} aktif · {tenants.filter(t=>!t.aktif).length} alumni</p></div>
         {isEdit && <Btn onClick={openAdd}><Plus size={16}/>Tambah Penyewa</Btn>}
       </div>
@@ -721,7 +731,7 @@ function TenantsPage({ role, rooms, tenants, saveTenants, saveRooms, addAudit, m
 
       {modal && (
         <Modal title={modal==="add"?"Tambah Penyewa":"Edit Data Penyewa"} onClose={()=>setModal(null)} size="lg">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {[{l:"Nama Lengkap *",k:"nama",f:true},{l:"No HP/WA *",k:"hp"},{l:"No KTP",k:"ktp"},{l:"Kontak Darurat",k:"kontakDarurat"},{l:"HP Darurat",k:"kontakDaruratHp"}].map(f=>(
               <div key={f.k} className={f.f?"col-span-2":""}>
                 <label className="text-xs font-bold text-slate-600 block mb-1">{f.l}</label>
@@ -888,7 +898,7 @@ function PaymentsPage({ role, user, rooms, tenants, payments, savePayments, addA
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <div><h1 className="text-2xl font-black text-slate-900">Pembayaran Sewa</h1>
+        <div><h1 className="text-xl sm:text-2xl font-black text-slate-900">Pembayaran Sewa</h1>
           <p className="text-slate-400 text-sm">{filtered.length} transaksi · {fRp(total)}</p></div>
         {isEdit&&<Btn onClick={openAdd}><Plus size={16}/>Input Pembayaran</Btn>}
       </div>
@@ -946,27 +956,27 @@ function PaymentsPage({ role, user, rooms, tenants, payments, savePayments, addA
                   return <option key={r.id} value={r.id}>K-{r.nomor} – {t?.nama||"?"}</option>;
                 })}
               </select></div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div><label className="text-xs font-bold text-slate-600 block mb-1">Periode *</label>
                 <select className={inp} value={form.periode} onChange={e=>setForm({...form,periode:e.target.value})}>
                   {Array.from({length:12},(_,i)=>{const d=new Date();d.setMonth(d.getMonth()-i);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;}).map(m=><option key={m} value={m}>{mLbl(m)}</option>)}</select></div>
               <div><label className="text-xs font-bold text-slate-600 block mb-1">Nominal (Rp) *</label>
                 <input type="number" className={inp} value={form.nominal||0} onChange={e=>setForm({...form,nominal:e.target.value})}/></div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div><label className="text-xs font-bold text-slate-600 block mb-1">Metode</label>
                 <select className={inp} value={form.metode} onChange={e=>setForm({...form,metode:e.target.value})}>
                   <option value="transfer">Transfer Bank</option><option value="tunai">Tunai</option></select></div>
               <div><label className="text-xs font-bold text-slate-600 block mb-1">Bank</label>
                 <input className={inp} placeholder="BCA, BRI, Mandiri..." value={form.bank||""} onChange={e=>setForm({...form,bank:e.target.value})}/></div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div><label className="text-xs font-bold text-slate-600 block mb-1">Nama Pengirim</label>
                 <input className={inp} value={form.pengirim||""} onChange={e=>setForm({...form,pengirim:e.target.value})}/></div>
               <div><label className="text-xs font-bold text-slate-600 block mb-1">No. Referensi</label>
                 <input className={inp} value={form.referensi||""} onChange={e=>setForm({...form,referensi:e.target.value})}/></div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div><label className="text-xs font-bold text-slate-600 block mb-1">Tanggal Bayar</label>
                 <input type="date" className={inp} value={form.tanggal||""} onChange={e=>setForm({...form,tanggal:e.target.value})}/></div>
               <div><label className="text-xs font-bold text-slate-600 block mb-1">Catatan</label>
@@ -1034,7 +1044,7 @@ function ExpensesPage({ role, user, expenses, saveExpenses, addAudit, myPerms })
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <div><h1 className="text-2xl font-black text-slate-900">Kas & Pengeluaran</h1>
+        <div><h1 className="text-xl sm:text-2xl font-black text-slate-900">Kas & Pengeluaran</h1>
           <p className="text-slate-400 text-sm">Disetujui: {fRp(totApproved)} · Pending: {fRp(totPending)}</p></div>
         {isEdit&&<Btn onClick={openAdd}><Plus size={16}/>Input Pengeluaran</Btn>}
       </div>
@@ -1092,7 +1102,7 @@ function ExpensesPage({ role, user, expenses, saveExpenses, addAudit, myPerms })
       {modal && (
         <Modal title="Input Pengeluaran" onClose={()=>setModal(false)}>
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div><label className="text-xs font-bold text-slate-600 block mb-1">Kategori</label>
                 <select className={inp} value={form.kategori} onChange={e=>setForm({...form,kategori:e.target.value})}>
                   {["Listrik","Air","Kebersihan","Keamanan","Pemeliharaan","Iuran RT/RW","Lain-lain"].map(c=><option key={c}>{c}</option>)}</select></div>
@@ -1102,7 +1112,7 @@ function ExpensesPage({ role, user, expenses, saveExpenses, addAudit, myPerms })
             </div>
             <div><label className="text-xs font-bold text-slate-600 block mb-1">Deskripsi *</label>
               <input className={inp} value={form.deskripsi||""} onChange={e=>setForm({...form,deskripsi:e.target.value})} placeholder="Tagihan PLN bulan Mei..."/></div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div><label className="text-xs font-bold text-slate-600 block mb-1">Nominal (Rp) *</label>
                 <input type="number" className={inp} value={form.nominal||0} onChange={e=>setForm({...form,nominal:e.target.value})}/>
                 {+form.nominal>5000000&&<p className="text-xs text-amber-600 mt-1.5 font-semibold">⚠ &gt; Rp 5 juta — butuh 2 approval investor</p>}
@@ -1183,7 +1193,7 @@ function ReportsPage({ rooms, tenants, payments, expenses, settings, audit, kasT
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div><h1 className="text-2xl font-black text-slate-900">Laporan Keuangan</h1><p className="text-slate-400 text-sm">{mLbl(month)}</p></div>
+        <div><h1 className="text-xl sm:text-2xl font-black text-slate-900">Laporan Keuangan</h1><p className="text-slate-400 text-sm">{mLbl(month)}</p></div>
         <Btn v="secondary" onClick={doPrint}><Download size={16}/>Export / Cetak PDF</Btn>
       </div>
 
@@ -1207,7 +1217,7 @@ function ReportsPage({ rooms, tenants, payments, expenses, settings, audit, kasT
       {/* PENDAPATAN TAB */}
       {tab==="pendapatan" && (
         <>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
               <p className="text-xs font-bold text-slate-400 uppercase">Total Pendapatan Sewa</p>
               <p className="text-2xl font-black text-emerald-600 mt-1">{fRp(totPendapatan)}</p>
@@ -1242,7 +1252,7 @@ function ReportsPage({ rooms, tenants, payments, expenses, settings, audit, kasT
       {/* BANK TAB */}
       {tab==="bank" && (
         <>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
               <p className="text-xs font-bold text-slate-400 uppercase">Bank Masuk</p>
               <p className="text-2xl font-black text-emerald-600 mt-1">+{fRp(totBankIn)}</p>
@@ -1253,7 +1263,7 @@ function ReportsPage({ rooms, tenants, payments, expenses, settings, audit, kasT
             </div>
             <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
               <p className="text-xs font-bold text-slate-400 uppercase">Net</p>
-              <p className="text-2xl font-black text-slate-900 mt-1">{fRp(totBankIn-totBankOut)}</p>
+              <p className="text-xl sm:text-2xl font-black text-slate-900 mt-1">{fRp(totBankIn-totBankOut)}</p>
             </div>
           </div>
 
@@ -1303,7 +1313,7 @@ function ReportsPage({ rooms, tenants, payments, expenses, settings, audit, kasT
       {/* KAS TAB */}
       {tab==="kas" && (
         <>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
               <p className="text-xs font-bold text-slate-400 uppercase">Kas Masuk</p>
               <p className="text-2xl font-black text-emerald-600 mt-1">+{fRp(totKasIn)}</p>
@@ -1314,7 +1324,7 @@ function ReportsPage({ rooms, tenants, payments, expenses, settings, audit, kasT
             </div>
             <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
               <p className="text-xs font-bold text-slate-400 uppercase">Net</p>
-              <p className="text-2xl font-black text-slate-900 mt-1">{fRp(totKasIn-totKasOut)}</p>
+              <p className="text-xl sm:text-2xl font-black text-slate-900 mt-1">{fRp(totKasIn-totKasOut)}</p>
             </div>
           </div>
 
@@ -1463,7 +1473,7 @@ function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, 
 
   return (
     <div className="space-y-5 max-w-2xl">
-      <div><h1 className="text-2xl font-black text-slate-900">Pengaturan</h1>
+      <div><h1 className="text-xl sm:text-2xl font-black text-slate-900">Pengaturan</h1>
         <p className="text-slate-400 text-sm">Admin only — perubahan berlaku langsung</p></div>
 
       {/* FLOOR & ROOM CONFIG */}
@@ -1487,7 +1497,7 @@ function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, 
                   <span className="text-xs text-slate-400">{current} kamar saat ini · {occupied} terisi</span>
                   <button onClick={()=>removeFloor(lt)} className="ml-auto text-xs text-red-400 hover:text-red-600 font-bold transition">Hapus Lantai</button>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs font-bold text-slate-500 block mb-1">Prefix Kode Kamar</label>
                     <div className="flex items-center gap-2">
@@ -1664,7 +1674,7 @@ function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, 
           <Building size={20} className="text-blue-600"/>
           <h2 className="font-black text-slate-900">Info Perusahaan (Kop Invoice)</h2>
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {[{l:"Nama Perusahaan/Kos",k:"name",f:true},{l:"Alamat",k:"address",f:true},{l:"No Telepon",k:"phone"},{l:"Email",k:"email"}].map(f=>(
             <div key={f.k} className={f.f?"col-span-2":""}>
               <label className="text-xs font-bold text-slate-600 block mb-1">{f.l}</label>
@@ -1688,7 +1698,7 @@ function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, 
         )}
         <div className="space-y-3">
           {(form.bankAccounts||[]).map((b,i)=>(
-            <div key={b.id||i} className="grid grid-cols-7 gap-2 items-end bg-slate-50 rounded-xl p-3">
+            <div key={b.id||i} className="grid grid-cols-1 sm:grid-cols-7 gap-2 items-end bg-slate-50 rounded-xl p-3">
               <div className="col-span-2">
                 <label className="text-xs font-bold text-slate-500 block mb-1">Bank</label>
                 <input className={inp} placeholder="BCA, BRI..." value={b.bank||""}
@@ -1717,7 +1727,7 @@ function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, 
 
       <Card className="p-6">
         <h2 className="font-black text-slate-900 mb-5">PIN Akses</h2>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {[{l:"Admin (Ricy)",k:"admin"},{l:"Investor Ricy",k:"ricy"},{l:"Investor Arief",k:"arief"},{l:"Investor Ferry",k:"ferry"},{l:"Staff",k:"staff"}].map(p=>(
             <div key={p.k}><label className="text-xs font-bold text-slate-600 block mb-1">{p.l}</label>
               <input className={inp} value={pins[p.k]||""} onChange={e=>setPins({...pins,[p.k]:e.target.value})} placeholder="PIN baru"/></div>
@@ -1813,7 +1823,7 @@ function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, 
           <h2 className="font-black text-red-700">Reset / Hapus Data Test</h2>
         </div>
         <p className="text-slate-500 text-sm mb-5">Hapus data uji coba. Pengaturan, % kepemilikan, dan PIN <strong>tidak</strong> ikut terhapus.</p>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {[
             {label:"Hapus Semua Pembayaran",  key:"payments",  desc:"Bersihkan semua data sewa masuk"},
             {label:"Hapus Semua Pengeluaran", key:"expenses",  desc:"Bersihkan semua data kas keluar"},
@@ -1920,7 +1930,7 @@ function AuditPage({ audit }) {
   };
   return (
     <div className="space-y-5">
-      <div><h1 className="text-2xl font-black text-slate-900">Log Aktivitas</h1>
+      <div><h1 className="text-xl sm:text-2xl font-black text-slate-900">Log Aktivitas</h1>
         <p className="text-slate-400 text-sm">{audit.length} entri · tidak bisa dihapus</p></div>
       <Card>
         {audit.length===0&&<p className="text-center py-10 text-slate-400 text-sm">Belum ada aktivitas tercatat</p>}
@@ -2375,7 +2385,7 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
       )}
 
       <div>
-        <h1 className="text-2xl font-black text-slate-900">Invoice Tagihan</h1>
+        <h1 className="text-xl sm:text-2xl font-black text-slate-900">Invoice Tagihan</h1>
         <p className="text-slate-400 text-sm">{invoices.length} invoice · {invoices.filter(i=>i.paid).length} lunas</p>
       </div>
 
@@ -2672,7 +2682,7 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
               <p className="text-xs text-slate-400 mt-1">Dihitung dari jatuh tempo tgl {modal.jatuhTempo} setiap bulan</p>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-black text-slate-600 block mb-1">Nominal (Rp)</label>
                 <input type="number" className={inp} value={form.nominal||0} onChange={e=>setForm({...form,nominal:+e.target.value})}/>
@@ -2723,20 +2733,20 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
                 <p className="text-xs text-amber-600 mt-1">Sisa setelah bayar: {fRp(getRemaining(payModal.inv)-payForm.amount)}</p>
               )}
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div><label className="text-xs font-bold text-slate-600 block mb-1">Tanggal Bayar *</label>
                 <input type="date" className={inp} value={payForm.date} onChange={e=>setPayForm({...payForm,date:e.target.value})}/></div>
               <div><label className="text-xs font-bold text-slate-600 block mb-1">Metode</label>
                 <select className={inp} value={payForm.method} onChange={e=>setPayForm({...payForm,method:e.target.value})}>
                   <option value="transfer">Transfer Bank</option><option value="tunai">Tunai / Cash</option></select></div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div><label className="text-xs font-bold text-slate-600 block mb-1">Bank</label>
                 <input className={inp} placeholder="BCA, BRI, Mandiri..." value={payForm.bank} onChange={e=>setPayForm({...payForm,bank:e.target.value})}/></div>
               <div><label className="text-xs font-bold text-slate-600 block mb-1">Nama Pengirim</label>
                 <input className={inp} value={payForm.pengirim} onChange={e=>setPayForm({...payForm,pengirim:e.target.value})}/></div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div><label className="text-xs font-bold text-slate-600 block mb-1">No. Referensi</label>
                 <input className={inp} value={payForm.referensi} onChange={e=>setPayForm({...payForm,referensi:e.target.value})}/></div>
               <div><label className="text-xs font-bold text-slate-600 block mb-1">Catatan</label>
@@ -2776,14 +2786,14 @@ function StatusBayarPage({ rooms, tenants, payments }) {
   const inp="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
   return (
     <div className="space-y-5">
-      <div><h1 className="text-2xl font-black text-slate-900">Status Pembayaran</h1></div>
+      <div><h1 className="text-xl sm:text-2xl font-black text-slate-900">Status Pembayaran</h1></div>
       <div className="flex items-center gap-3">
         <label className="text-sm font-bold text-slate-600">Bulan:</label>
         <select value={fMonth} onChange={e=>setFMonth(e.target.value)} className={inp+" w-44"}>
           {ms.map(m=><option key={m} value={m}>{new Date(m+"-01").toLocaleDateString("id-ID",{month:"long",year:"numeric"})}</option>)}
         </select>
       </div>
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[["Sudah Lunas",stats.lunas,"text-emerald-600"],["Belum Bayar",stats.belum,"text-amber-600"],["Terlambat",stats.telat,"text-red-600"]].map(([l,v,c])=>(
           <div key={l} className="bg-white rounded-2xl border border-slate-100 p-4 text-center shadow-sm">
             <p className={`text-3xl font-black ${c}`}>{v}</p>
@@ -2872,7 +2882,7 @@ function BagiHasilPage({ settings, payments, expenses, kasTx, bagiHasil, saveBag
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-black text-slate-900">Bagi Hasil</h1>
+        <h1 className="text-xl sm:text-2xl font-black text-slate-900">Bagi Hasil</h1>
         <p className="text-slate-400 text-sm">Distribusi keuntungan ke investor</p>
       </div>
 
@@ -2997,10 +3007,10 @@ function MutasiBankKasPage({ settings, saveSettings, payments, expenses, rooms, 
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <div><h1 className="text-2xl font-black text-slate-900">Mutasi Keuangan</h1><p className="text-slate-400 text-sm">Bank & Kas Operasional</p></div>
+        <div><h1 className="text-xl sm:text-2xl font-black text-slate-900">Mutasi Keuangan</h1><p className="text-slate-400 text-sm">Bank & Kas Operasional</p></div>
         {canEdit&&<button onClick={async()=>{const j=prompt("Jumlah transfer Bank ke Kas:");if(!j||isNaN(j))return;const tx={id:Math.random().toString(36).substr(2),tanggal:new Date().toISOString().split("T")[0],tipe:"masuk",jumlah:+j,deskripsi:"Transfer dari Bank",inputBy:user,inputAt:new Date().toISOString()};await saveKas([...(kasTx||[]),tx]);alert("Transfer berhasil!");}} className="px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded-xl">Transfer Bank→Kas</button>}
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
         {[["Saldo Bank",fRp(bankAkhir),"text-blue-600"],["Saldo Kas",fRp(kasAkhir),"text-amber-600"],
           ["Total Masuk Bank",fRp(fil([...bankIn]).reduce((s,t)=>s+t.jumlah,0)),"text-emerald-600"],
           ["Total Keluar Kas",fRp(fil([...kasOut]).reduce((s,t)=>s+t.jumlah,0)),"text-red-600"]].map(([l,v,c])=>(
@@ -3048,7 +3058,7 @@ export default function App() {
   const [role,    setRole]    = useState(_sess?.r||null);
   const [user,    setUser]    = useState(_sess?.u||null);
   const [page,    setPage]    = useState("dashboard");
-  const [open,    setOpen]    = useState(true);
+  const [open,    setOpen]    = useState(typeof window!=="undefined"&&window.innerWidth>=768);
   const [settings,setSettings]= useState(DEF);
   const [rooms,   setRooms]   = useState([]);
   const [tenants, setTenants] = useState([]);
