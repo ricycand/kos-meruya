@@ -2066,6 +2066,8 @@ function InvoicesPage({ role, user, rooms, tenants, settings, addAudit, audit, m
   const [showHistory, setShowHistory] = useState(true);
   const [fStatus, setFStatus] = useState("semua");
   const [fBulan, setFBulan] = useState("");
+  const [genSearch, setGenSearch] = useState("");
+  const [genSort, setGenSort] = useState("kamar");
 
   const isEdit = canEdit;
 
@@ -2389,11 +2391,32 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
         <Card className="overflow-hidden">
           <button onClick={()=>setShowGenerate(!showGenerate)}
             className="w-full px-5 py-4 flex items-center justify-between hover:bg-slate-50 transition">
-            <h2 className="font-black text-slate-900">Generate Invoice per Penyewa</h2>
-            <span className="text-slate-400 text-sm font-bold">{showGenerate?"▲ Tutup":"▼ Buka"}</span>
+            <div className="flex items-center gap-3">
+              <h2 className="font-black text-slate-900">Generate Invoice per Penyewa</h2>
+              <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full">{activeTenants.length} penyewa</span>
+            </div>
+            <span className={`text-sm font-bold transition-transform ${showGenerate?"text-blue-600":"text-slate-400"}`}>{showGenerate?"▲ Tutup":"▼ Buka"}</span>
           </button>
           {showGenerate&&(
-          <div className="px-5 pb-5 overflow-x-auto">
+          <div className="border-t border-slate-100">
+            {/* Search & Sort */}
+            <div className="px-5 py-3 bg-slate-50/50 flex items-center gap-3 flex-wrap">
+              <div className="relative flex-1 min-w-[200px]">
+                <Search size={14} className="absolute left-3 top-2.5 text-slate-400"/>
+                <input className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Cari nama atau no kamar..." value={genSearch} onChange={e=>setGenSearch(e.target.value)}/>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-bold text-slate-500">Urutkan:</label>
+                <select value={genSort} onChange={e=>setGenSort(e.target.value)}
+                  className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <option value="kamar">No Kamar</option>
+                  <option value="nama">Nama A-Z</option>
+                  <option value="jt">Jatuh Tempo</option>
+                </select>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr className="border-b border-slate-100">
                 {["Kamar","Nama","No HP","JT","Harga/Bln",""].map(h=>(
@@ -2401,32 +2424,47 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
                 ))}
               </tr></thead>
               <tbody>
-                {activeTenants.length===0&&<tr><td colSpan={6} className="text-center py-8 text-slate-400 text-sm">Belum ada penyewa aktif</td></tr>}
-                {activeTenants.map(t=>{
-                  const room=rooms.find(r=>r.id===t.kamarId);
-                  const lastInv=invoices.find(i=>i.tenantId===t.id);
-                  return (
-                    <tr key={t.id} className="border-b border-slate-50 hover:bg-slate-50 transition">
-                      <td className="px-4 py-3 font-black text-blue-600">K-{room?.nomor||"—"}</td>
-                      <td className="px-4 py-3 font-bold text-slate-800">{t.nama}</td>
-                      <td className="px-4 py-3 text-slate-500">{t.hp||"—"}</td>
-                      <td className="px-4 py-3 text-slate-500">Tgl {t.jatuhTempo}</td>
-                      <td className="px-4 py-3 font-bold text-emerald-600">{fRp(room?.harga)}</td>
-                      <td className="px-4 py-3">
-                        <button onClick={()=>openGenerate(t)}
-                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5">
-                          <FileText size={12}/>Buat Invoice
-                        </button>
-                        <button onClick={()=>setMultiModal(t)}
-                          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5">
-                          <FileText size={12}/>Multi Bulan
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {(()=>{
+                  let list = [...activeTenants];
+                  if(genSearch){
+                    const q=genSearch.toLowerCase();
+                    list=list.filter(t=>{const rm=rooms.find(r=>r.id===t.kamarId);return t.nama?.toLowerCase().includes(q)||(rm?.nomor||"").toLowerCase().includes(q)||t.hp?.includes(q);});
+                  }
+                  list.sort((a,b)=>{
+                    if(genSort==="kamar"){const ra=rooms.find(r=>r.id===a.kamarId);const rb=rooms.find(r=>r.id===b.kamarId);return (ra?.nomor||"").localeCompare(rb?.nomor||"",undefined,{numeric:true});}
+                    if(genSort==="nama") return (a.nama||"").localeCompare(b.nama||"");
+                    if(genSort==="jt") return (a.jatuhTempo||1)-(b.jatuhTempo||1);
+                    return 0;
+                  });
+                  if(list.length===0) return <tr><td colSpan={6} className="text-center py-8 text-slate-400 text-sm">{genSearch?"Tidak ditemukan":"Belum ada penyewa aktif"}</td></tr>;
+                  return list.map(t=>{
+                    const room=rooms.find(r=>r.id===t.kamarId);
+                    return (
+                      <tr key={t.id} className="border-b border-slate-50 hover:bg-slate-50 transition">
+                        <td className="px-4 py-3 font-black text-blue-600">K-{room?.nomor||"—"}</td>
+                        <td className="px-4 py-3 font-bold text-slate-800">{t.nama}</td>
+                        <td className="px-4 py-3 text-slate-500">{t.hp||"—"}</td>
+                        <td className="px-4 py-3 text-slate-500">Tgl {t.jatuhTempo}</td>
+                        <td className="px-4 py-3 font-bold text-emerald-600">{fRp(room?.harga)}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex gap-1.5">
+                            <button onClick={()=>openGenerate(t)}
+                              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5">
+                              <FileText size={12}/>Invoice
+                            </button>
+                            <button onClick={()=>setMultiModal(t)}
+                              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5">
+                              Multi
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  });
+                })()}
               </tbody>
             </table>
+            </div>
           </div>
           )}
         </Card>
