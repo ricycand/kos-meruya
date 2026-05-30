@@ -2078,6 +2078,7 @@ function InvoicesPage({ role, user, rooms, tenants, settings, addAudit, audit, m
   const [editInvForm, setEditInvForm] = useState({nominal:0,dueDate:""});
   const [showGenerate, setShowGenerate] = useState(false);
   const [showHistory, setShowHistory] = useState(true);
+  const [showDue, setShowDue] = useState(true);
   const [fStatus, setFStatus] = useState("semua");
   const [fBulan, setFBulan] = useState("");
   const [genSearch, setGenSearch] = useState("");
@@ -2484,13 +2485,18 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
 
       {/* Jatuh Tempo Terdekat */}
       {!loadingInv&&unpaidInvs.length>0&&(
-        <Card className="p-5 border-l-4 border-amber-400">
-          <div className="flex items-center gap-2 mb-3">
-            <Clock size={18} className="text-amber-500"/>
-            <h2 className="font-black text-slate-900">Jatuh Tempo Terdekat</h2>
-            <span className="text-xs font-bold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">{unpaidInvs.length} belum lunas</span>
-          </div>
-          <div className="space-y-2">
+        <Card className="overflow-hidden border-l-4 border-amber-400">
+          <button onClick={()=>setShowDue(!showDue)}
+            className="w-full px-5 py-4 flex items-center justify-between hover:bg-slate-50 transition">
+            <div className="flex items-center gap-2">
+              <Clock size={18} className="text-amber-500"/>
+              <h2 className="font-black text-slate-900">Jatuh Tempo Terdekat</h2>
+              <span className="text-xs font-bold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">{unpaidInvs.length} belum lunas</span>
+            </div>
+            <span className={`text-sm font-bold ${showDue?"text-amber-600":"text-slate-400"}`}>{showDue?"▲ Tutup":"▼ Buka"}</span>
+          </button>
+          {showDue&&(
+          <div className="px-5 pb-5 space-y-2">
             {unpaidInvs.slice(0,5).map(inv=>{
               const remaining = getRemaining(inv);
               const paid = getPaid(inv);
@@ -2511,6 +2517,7 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
             })}
             {unpaidInvs.length>5&&<p className="text-xs text-slate-400 text-center pt-1">+{unpaidInvs.length-5} invoice lainnya</p>}
           </div>
+          )}
         </Card>
       )}
 
