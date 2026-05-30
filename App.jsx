@@ -600,6 +600,7 @@ function TenantsPage({ role, rooms, tenants, saveTenants, saveRooms, addAudit, m
       if(sortBy==="nama") return (a.nama||"").localeCompare(b.nama||"");
       if(sortBy==="kamar"){const ra=rooms.find(r=>r.id===a.kamarId);const rb=rooms.find(r=>r.id===b.kamarId);return (ra?.nomor||0)-(rb?.nomor||0);}
       if(sortBy==="lantai"){const ra=rooms.find(r=>r.id===a.kamarId);const rb=rooms.find(r=>r.id===b.kamarId);return (ra?.lantai||0)-(rb?.lantai||0);}
+      if(sortBy==="berlaku"){const ba=getBerlaku(a);const bb=getBerlaku(b);if(!ba&&!bb)return 0;if(!ba)return 1;if(!bb)return -1;return new Date(ba)-new Date(bb);}
       return 0;
     });
 
@@ -680,6 +681,7 @@ function TenantsPage({ role, rooms, tenants, saveTenants, saveRooms, addAudit, m
             <option value="nama">Nama A-Z</option>
             <option value="kamar">Nomor Kamar</option>
             <option value="lantai">Lantai</option>
+            <option value="berlaku">Berlaku s/d</option>
           </select>
         </div>
       </div>
@@ -688,7 +690,7 @@ function TenantsPage({ role, rooms, tenants, saveTenants, saveRooms, addAudit, m
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="border-b border-slate-100">
-              {["Kamar","Lantai","Nama","HP","Masuk","Berlaku s/d","JT","Deposit","Status",""].map(h=>(
+              {["Kamar","Lantai","Nama","HP","Masuk","Berlaku s/d","Deposit","Status",""].map(h=>(
                 <th key={h} className="text-left px-5 py-3.5 text-xs font-bold text-slate-400 uppercase tracking-widest">{h}</th>
               ))}
             </tr></thead>
@@ -710,7 +712,6 @@ function TenantsPage({ role, rooms, tenants, saveTenants, saveRooms, addAudit, m
                       const exp=new Date(b); const now2=new Date(); const diff=Math.ceil((exp-now2)/(1000*60*60*24));
                       return <span className={`text-xs font-bold ${diff<7?"text-red-600":diff<30?"text-amber-600":"text-emerald-600"}`}>{fD(b)}{diff<0?" (lewat)":`  (${diff}hr)`}</span>;
                     })()}</td>
-                    <td className="px-5 py-3.5 text-slate-500">Tgl {t.jatuhTempo}</td>
                     <td className="px-5 py-3.5 text-slate-500">{fRp(t.deposit)}</td>
                     <td className="px-5 py-3.5"><Badge status={t.aktif?"aktif":"keluar"}/></td>
                     <td className="px-5 py-3.5">
@@ -2070,8 +2071,11 @@ function InvoicesPage({ role, user, rooms, tenants, settings, addAudit, audit, m
   const [previewInv,setPreviewInv]=useState(null);
   const [multiModal,setMultiModal]=useState(null);
   const [multiMonths,setMultiMonths]=useState(3);
+  const [multiPrice,setMultiPrice]=useState(0);
   const [payModal,  setPayModal] = useState(null);
   const [payForm,   setPayForm]  = useState({amount:0,date:"",method:"transfer",bank:"",pengirim:"",referensi:"",catatan:""});
+  const [editInvModal, setEditInvModal] = useState(null);
+  const [editInvForm, setEditInvForm] = useState({nominal:0,dueDate:""});
   const [showGenerate, setShowGenerate] = useState(false);
   const [showHistory, setShowHistory] = useState(true);
   const [fStatus, setFStatus] = useState("semua");
@@ -2184,7 +2188,7 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
     if (!room?.harga) return alert("Set harga kamar terlebih dahulu.");
     const n = +multiMonths;
     const per = calcNextPeriode(t, n);
-    const totalNominal = room.harga * n;
+    const totalNominal = multiPrice || (room.harga * n);
     const inv = {
       id:uid(), invoiceNo:nextInvNo(per.targetMonth),
       tenantId:t.id, tenantName:t.nama, tenantHp:t.hp,
@@ -2243,6 +2247,16 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
 
   const showShare = (inv) => setShowWA({ inv, msg: genWAMsg(inv) });
 
+  const saveEditInv = async () => {
+    const inv = editInvModal;
+    const updatedInv = {...inv, nominal:+editInvForm.nominal, dueDate:editInvForm.dueDate};
+    const updatedInvs = invoices.map(i=>i.id===inv.id?updatedInv:i);
+    await saveInvs(updatedInvs);
+    await store.set(`km-inv-${inv.id}`, updatedInv);
+    await addAudit("INV_EDIT",`${inv.invoiceNo} diedit: nominal ${fRp(editInvForm.nominal)}, JT ${fD(editInvForm.dueDate)}`);
+    setEditInvModal(null);
+  };
+
   const activeTenants = tenants.filter(t=>t.aktif);
   const ms = months6();
   const noBank = !settings.bankAccounts?.length;
@@ -2266,29 +2280,28 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
               <label className="text-xs font-bold text-slate-600 block mb-2">Jumlah Bulan</label>
               <div className="flex gap-2">
                 {[1,2,3,6,12].map(n=>(
-                  <button key={n} onClick={()=>setMultiMonths(n)}
+                  <button key={n} onClick={()=>{setMultiMonths(n);setMultiPrice((room?.harga||0)*n);}}
                     className={`px-4 py-2 rounded-xl text-sm font-bold border transition ${multiMonths===n?"bg-blue-600 text-white border-blue-600":"bg-white text-slate-600 border-slate-200 hover:bg-slate-50"}`}>
                     {n} bln
                   </button>
                 ))}
               </div>
             </div>
-            <div className="bg-slate-50 rounded-xl p-4">
-              <p className="text-xs font-bold text-slate-500 mb-2">Invoice yang akan dibuat:</p>
-              {months.map(m=>(
-                <div key={m} className="flex justify-between text-sm py-1 border-b border-slate-100 last:border-0">
-                  <span className="text-slate-700">{mLbl(m)}</span>
-                  <span className="font-bold text-slate-900">{fRp(room?.harga||0)}</span>
-                </div>
-              ))}
-              <div className="flex justify-between text-sm pt-2 font-black">
-                <span>Total {multiMonths} bulan</span>
-                <span className="text-blue-600">{fRp((room?.harga||0)*multiMonths)}</span>
-              </div>
+            <div>
+              <label className="text-xs font-bold text-slate-600 block mb-1">Total Harga (Rp)</label>
+              <input type="number" className={inp} value={multiPrice||0}
+                onChange={e=>setMultiPrice(+e.target.value)}/>
+              {(()=>{
+                const normal=(room?.harga||0)*multiMonths;
+                const diff=normal-multiPrice;
+                if(diff>0) return <p className="text-xs text-emerald-600 mt-1 font-bold">🏷 Diskon {fRp(diff)} ({Math.round(diff/normal*100)}%) dari harga normal {fRp(normal)}</p>;
+                if(diff<0) return <p className="text-xs text-amber-600 mt-1 font-bold">⚠ Lebih mahal {fRp(-diff)} dari harga normal</p>;
+                return <p className="text-xs text-slate-400 mt-1">Harga normal: {fRp(normal)} ({fRp(room?.harga||0)} × {multiMonths} bln)</p>;
+              })()}
             </div>
             <div className="flex gap-2 justify-end pt-2">
               <button onClick={()=>setMultiModal(null)} className="px-4 py-2 bg-slate-100 text-slate-700 font-bold rounded-xl text-sm">Batal</button>
-              <button onClick={generateMulti} className="px-4 py-2 bg-blue-600 text-white font-bold rounded-xl text-sm">Generate {multiMonths} Invoice</button>
+              <button onClick={generateMulti} className="px-4 py-2 bg-blue-600 text-white font-bold rounded-xl text-sm">Generate Invoice</button>
             </div>
           </div>
         </div>
@@ -2451,7 +2464,7 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
                               className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5">
                               <FileText size={12}/>Invoice
                             </button>
-                            <button onClick={()=>setMultiModal(t)}
+                            <button onClick={()=>{const rm=rooms.find(r=>r.id===t.kamarId);setMultiPrice((rm?.harga||0)*multiMonths);setMultiModal(t);}}
                               className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5">
                               Multi
                             </button>
@@ -2579,6 +2592,7 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
               <div className="flex items-center gap-1.5 mt-3 flex-wrap">
                 {!lunas&&isEdit&&<button onClick={()=>openPayModal(inv,"full")} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition">Bayar Penuh</button>}
                 {!lunas&&isEdit&&<button onClick={()=>openPayModal(inv,"partial")} className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl transition">Sebagian</button>}
+                {!lunas&&isEdit&&<button onClick={()=>{setEditInvForm({nominal:inv.nominal,dueDate:inv.dueDate||""});setEditInvModal(inv);}} className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition">✎ Edit</button>}
                 {!lunas&&isEdit&&<button onClick={()=>cancelInvoice(inv)} className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold rounded-xl transition">✕ Batal</button>}
                 <button onClick={()=>printInvoice(inv)} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition">🖨 PDF</button>
                 {!lunas&&<button onClick={()=>showShare(inv)} className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-xl transition">💬 WA</button>}
@@ -2728,6 +2742,32 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
               <Btn v={payModal.type==="full"?"success":"primary"} onClick={recordPayment}>
                 {payModal.type==="full"?"✓ Bayar Penuh":"Simpan Pembayaran Sebagian"}
               </Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Edit Invoice Modal */}
+      {editInvModal&&(
+        <Modal title={`Edit Invoice – ${editInvModal.invoiceNo}`} onClose={()=>setEditInvModal(null)}>
+          <div className="space-y-4">
+            <div className="bg-slate-50 rounded-xl p-4 text-sm">
+              <p><span className="font-bold">Penyewa:</span> {editInvModal.tenantName} · K-{editInvModal.roomNomor}</p>
+              <p><span className="font-bold">Periode:</span> {editInvModal.periode?.label}</p>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-600 block mb-1">Nominal (Rp)</label>
+              <input type="number" className={inp} value={editInvForm.nominal||0}
+                onChange={e=>setEditInvForm({...editInvForm,nominal:+e.target.value})}/>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-600 block mb-1">Tanggal Jatuh Tempo</label>
+              <input type="date" className={inp} value={editInvForm.dueDate||""}
+                onChange={e=>setEditInvForm({...editInvForm,dueDate:e.target.value})}/>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <Btn v="secondary" onClick={()=>setEditInvModal(null)}>Batal</Btn>
+              <Btn onClick={saveEditInv}>Simpan Perubahan</Btn>
             </div>
           </div>
         </Modal>
