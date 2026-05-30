@@ -115,6 +115,23 @@ function Modal({ title, onClose, children, size="md" }) {
 
 const Card = ({children,className=""}) => <div className={`bg-white rounded-2xl border border-slate-100 shadow-sm ${className}`}>{children}</div>;
 
+function CollapseCard({ title, icon:Icon, badge, defaultOpen=false, danger, children }) {
+  const [open,setOpen]=useState(defaultOpen);
+  return (
+    <Card className={`overflow-hidden ${danger?"border-2 border-red-100":""}`}>
+      <button onClick={()=>setOpen(!open)} className="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition text-left">
+        <div className="flex items-center gap-2">
+          {Icon && <Icon size={20} className={danger?"text-red-500":"text-blue-600"}/>}
+          <h2 className={`font-black ${danger?"text-red-700":"text-slate-900"}`}>{title}</h2>
+          {badge && <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full">{badge}</span>}
+        </div>
+        <span className={`text-sm font-bold flex-shrink-0 ${open?"text-blue-600":"text-slate-400"}`}>{open?"▲":"▼"}</span>
+      </button>
+      {open && <div className="px-6 pb-6">{children}</div>}
+    </Card>
+  );
+}
+
 function Badge({ status }) {
   const map = {
     lunas:    { cls:"bg-emerald-100 text-emerald-700", label:"Lunas" },
@@ -1478,15 +1495,7 @@ function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, 
         <p className="text-slate-400 text-sm">Admin only — perubahan berlaku langsung</p></div>
 
       {/* FLOOR & ROOM CONFIG */}
-      <Card className="p-6">
-        <div className="flex items-center justify-between mb-5">
-          <div className="flex items-center gap-2">
-            <Building size={20} className="text-indigo-600"/>
-            <h2 className="font-black text-slate-900">Konfigurasi Lantai & Kamar</h2>
-          </div>
-          <span className="text-xs font-bold text-slate-400 bg-slate-100 px-3 py-1 rounded-full">Total: {totalRoomsConfig} kamar</span>
-        </div>
-
+      <CollapseCard title="Konfigurasi Lantai & Kamar" icon={Building} badge={`${totalRoomsConfig} kamar`}>
         <div className="space-y-3 mb-4">
           {Object.entries(floorCfg).sort(([a],[b])=>+a-+b).map(([lt, cfg]) => {
             const occupied = rooms.filter(r=>r.lantai===+lt&&r.status==="terisi").length;
@@ -1534,15 +1543,11 @@ function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, 
           <Check size={16}/>Terapkan Konfigurasi Lantai
         </Btn>
         <p className="text-xs text-slate-400 mt-2">⚠ Kode kamar yang sudah diedit manual tidak akan berubah. Prefix hanya berlaku untuk kamar baru.</p>
-      </Card>
+      </CollapseCard>
 
       {/* TIPE & HARGA KAMAR */}
-      <Card className="p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Grid size={20} className="text-indigo-600"/>
-            <h2 className="font-black text-slate-900">Tipe & Harga Kamar</h2>
-          </div>
+      <CollapseCard title="Tipe & Harga Kamar" icon={Grid}>
+        <div className="flex justify-end mb-3">
           <Btn v="secondary" size="sm" onClick={()=>setForm({...form, roomTypes:[...(form.roomTypes||[]),{id:uid(),nama:"",harga:0}]})}>
             <Plus size={14}/>Tambah Tipe
           </Btn>
@@ -1637,13 +1642,9 @@ function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, 
           }}><RefreshCw size={16}/>Sync Harga Saja (Tipe Tidak Berubah)</Btn>
           <p className="text-xs text-slate-400">Hanya update harga untuk kamar yang tipenya sudah cocok dengan setting.</p>
         </div>
-      </Card>
+      </CollapseCard>
 
-      <Card className="p-6">
-        <div className="flex items-center gap-2 mb-5">
-          <Shield size={20} className="text-blue-600"/>
-          <h2 className="font-black text-slate-900">% Kepemilikan Investor</h2>
-        </div>
+      <CollapseCard title="% Kepemilikan Investor" icon={Shield}>
         <div className="space-y-4">
           {[{l:"Ricy Candra",k:"ricy"},{l:"Arief Wahyudi",k:"arief"},{l:"Ferry Lukas",k:"ferry"}].map(inv=>(
             <div key={inv.k} className="flex items-center gap-4">
@@ -1657,24 +1658,19 @@ function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, 
             Total: {total.toFixed(3)}% {valid?"✓ Valid":"✗ Harus tepat 100%"}
           </div>
         </div>
-      </Card>
+      </CollapseCard>
 
-      <Card className="p-6">
-        <h2 className="font-black text-slate-900 mb-5">Parameter Keuangan</h2>
+      <CollapseCard title="Parameter Keuangan" icon={Wallet}>
         <div className="space-y-4">
           <div><label className="text-xs font-bold text-slate-600 block mb-1">Kas Operasional Bulanan (Rp)</label>
             <input type="number" className={inp} value={form.kasOperasional||0} onChange={e=>setForm({...form,kasOperasional:+e.target.value})}/></div>
           <div><label className="text-xs font-bold text-slate-600 block mb-1">Fee Pengelola (%)</label>
             <input type="number" min="0" max="100" step="0.1" className={inp} value={form.feeManager||0} onChange={e=>setForm({...form,feeManager:+e.target.value})}/></div>
         </div>
-      </Card>
+      </CollapseCard>
 
       {/* Company info */}
-      <Card className="p-6">
-        <div className="flex items-center gap-2 mb-5">
-          <Building size={20} className="text-blue-600"/>
-          <h2 className="font-black text-slate-900">Info Perusahaan (Kop Invoice)</h2>
-        </div>
+      <CollapseCard title="Info Perusahaan (Kop Invoice)" icon={Building}>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {[{l:"Nama Perusahaan/Kos",k:"name",f:true},{l:"Alamat",k:"address",f:true},{l:"No Telepon",k:"phone"},{l:"Email",k:"email"}].map(f=>(
             <div key={f.k} className={f.f?"col-span-2":""}>
@@ -1684,12 +1680,11 @@ function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, 
             </div>
           ))}
         </div>
-      </Card>
+      </CollapseCard>
 
       {/* Bank accounts */}
-      <Card className="p-6">
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="font-black text-slate-900">Rekening Perusahaan</h2>
+      <CollapseCard title="Rekening Perusahaan" icon={CreditCard}>
+        <div className="flex justify-end mb-3">
           <Btn v="secondary" size="sm" onClick={()=>setForm({...form, bankAccounts:[...(form.bankAccounts||[]),{id:uid(),bank:"",noRek:"",atasNama:""}]})}>
             <Plus size={14}/>Tambah Rekening
           </Btn>
@@ -1724,17 +1719,16 @@ function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, 
             </div>
           ))}
         </div>
-      </Card>
+      </CollapseCard>
 
-      <Card className="p-6">
-        <h2 className="font-black text-slate-900 mb-5">PIN Akses</h2>
+      <CollapseCard title="PIN Akses" icon={Shield}>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {[{l:"Admin (Ricy)",k:"admin"},{l:"Investor Ricy",k:"ricy"},{l:"Investor Arief",k:"arief"},{l:"Investor Ferry",k:"ferry"},{l:"Staff",k:"staff"}].map(p=>(
             <div key={p.k}><label className="text-xs font-bold text-slate-600 block mb-1">{p.l}</label>
               <input className={inp} value={pins[p.k]||""} onChange={e=>setPins({...pins,[p.k]:e.target.value})} placeholder="PIN baru"/></div>
           ))}
         </div>
-      </Card>
+      </CollapseCard>
 
       <div className="flex items-center gap-4">
         <Btn onClick={doSave} size="lg">Simpan Semua Perubahan</Btn>
@@ -1742,12 +1736,8 @@ function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, 
       </div>
 
       {/* KELOLA PENGGUNA */}
-      <Card className="p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Shield size={18} className="text-blue-500"/>
-            <h2 className="font-black text-slate-900">Kelola Pengguna</h2>
-          </div>
+      <CollapseCard title="Kelola Pengguna" icon={Shield} badge={`${(users||[]).length} user`}>
+        <div className="flex justify-end mb-4">
           <button onClick={()=>{
             const id=prompt("ID Pengguna (huruf kecil tanpa spasi):");
             if(!id||!id.trim())return;
@@ -1802,27 +1792,19 @@ function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, 
             </div>
           ))}
         </div>
-      </Card>
+      </CollapseCard>
 
       {/* RESET DATA */}
-      <Card className="p-6 border-2 border-red-100">
-        <div className="flex items-center gap-2 mb-4">
-          <AlertTriangle size={18} className="text-red-500"/>
-          <h2 className="font-black text-slate-900">Reset Data</h2>
-        </div>
+      <CollapseCard title="Reset Data" icon={AlertTriangle} danger>
         <p className="text-sm text-slate-500 mb-4">Hapus semua data penyewa, pembayaran, kas, invoice, dan bersihkan status kamar. Web kembali seperti baru. <strong>Tidak bisa dibatalkan.</strong></p>
         <button onClick={()=>resetAll("penyewa")}
           className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-xl transition">
           🗑️ Reset Semua Data
         </button>
-      </Card>
+      </CollapseCard>
 
       {/* RESET DATA LAMA */}
-      <Card className="p-6 border-2 border-red-100">
-        <div className="flex items-center gap-2 mb-2">
-          <Trash2 size={20} className="text-red-500"/>
-          <h2 className="font-black text-red-700">Reset / Hapus Data Test</h2>
-        </div>
+      <CollapseCard title="Reset / Hapus Data Test" icon={Trash2} danger>
         <p className="text-slate-500 text-sm mb-5">Hapus data uji coba. Pengaturan, % kepemilikan, dan PIN <strong>tidak</strong> ikut terhapus.</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {[
@@ -1853,7 +1835,7 @@ function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, 
             🗑 Reset SEMUA Data (kecuali setting & PIN)
           </button>
         </div>
-      </Card>
+      </CollapseCard>
 
       {/* Modal Atur Akses */}
       {permsModal && (() => {
