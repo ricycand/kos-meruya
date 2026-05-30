@@ -2084,16 +2084,21 @@ function InvoicesPage({ role, user, rooms, tenants, settings, addAudit, audit, m
 
   const fmtDate = (d) => d.toLocaleDateString("id-ID",{day:"numeric",month:"long",year:"numeric"});
 
+  const addMonthsClamped = (baseDate, n) => {
+    const day = baseDate.getDate();
+    const t = new Date(baseDate.getFullYear(), baseDate.getMonth()+n, 1);
+    const lastDay = new Date(t.getFullYear(), t.getMonth()+1, 0).getDate();
+    t.setDate(Math.min(day, lastDay));
+    return t;
+  };
+
   const calcNextPeriode = (tenant, numMonths=1) => {
-    const tenantInvs = invoices.filter(i=>i.tenantId===tenant.id).sort((a,b)=>new Date(a.periode?.end||0)-new Date(b.periode?.end||0));
-    let start;
-    if(tenantInvs.length===0) {
-      start = new Date(tenant.tanggalMasuk);
-    } else {
-      const lastEnd = new Date(tenantInvs[tenantInvs.length-1].periode?.end);
-      start = new Date(lastEnd); start.setDate(start.getDate()+1);
-    }
-    const end = new Date(start); end.setMonth(end.getMonth()+numMonths); end.setDate(end.getDate()-1);
+    const moveIn = new Date(tenant.tanggalMasuk);
+    const tenantInvs = invoices.filter(i=>i.tenantId===tenant.id);
+    const monthsUsed = tenantInvs.reduce((s,i)=>s+(i.multiBulan||1), 0);
+    const start = addMonthsClamped(moveIn, monthsUsed);
+    const endExcl = addMonthsClamped(moveIn, monthsUsed + numMonths);
+    const end = new Date(endExcl); end.setDate(end.getDate()-1);
     const ym = `${start.getFullYear()}-${String(start.getMonth()+1).padStart(2,"0")}`;
     return { start:start.toISOString().split("T")[0], end:end.toISOString().split("T")[0], label:`${fmtDate(start)} – ${fmtDate(end)}`, targetMonth:ym };
   };
@@ -2189,11 +2194,18 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
   };
 
   const cancelInvoice = async (inv) => {
-    if (!confirm(`Batalkan invoice ${inv.invoiceNo} untuk ${inv.tenantName}?\nInvoice akan dihapus permanen.`)) return;
+    const paidAmt = getPaid(inv);
+    const warnMsg = paidAmt>0
+      ? `Batalkan invoice ${inv.invoiceNo} untuk ${inv.tenantName}?\n\n⚠ Invoice ini sudah ada pembayaran ${fRp(paidAmt)}. Pembayaran tersebut akan IKUT DIHAPUS dari laporan.\n\nInvoice akan dihapus permanen.`
+      : `Batalkan invoice ${inv.invoiceNo} untuk ${inv.tenantName}?\nInvoice akan dihapus permanen.`;
+    if (!confirm(warnMsg)) return;
     const updated = invoices.filter(i=>i.id!==inv.id);
     await saveInvs(updated);
     await store.set(`km-inv-${inv.id}`, null);
-    await addAudit("INV_BATAL", `Invoice ${inv.invoiceNo} - ${inv.tenantName} dibatalkan oleh ${user}`);
+    // Remove associated payments from main payments[] (shared IDs)
+    const payIds = new Set((inv.invPayments||[]).map(p=>p.id));
+    if(payIds.size>0) await savePayments(payments.filter(p=>!payIds.has(p.id)));
+    await addAudit("INV_BATAL", `Invoice ${inv.invoiceNo} - ${inv.tenantName} dibatalkan${paidAmt>0?` (pembayaran ${fRp(paidAmt)} ikut dihapus)`:""} oleh ${user}`);
   };
 
   const openPayModal = (inv, type) => {
