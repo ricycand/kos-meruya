@@ -1377,7 +1377,7 @@ function ReportsPage({ rooms, tenants, payments, expenses, settings, audit, kasT
 }
 
 // ═══════════════════════════════════════════════
-function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, saveRooms, users, saveUsers }) {
+function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, saveRooms, users, saveUsers, exportAll }) {
   const [permsModal, setPermsModal] = useState(null);
   const [form, setForm]    = useState({...settings, kepemilikan:{...settings.kepemilikan}});
   const [pins, setPins]    = useState({...settings.pins});
@@ -1792,6 +1792,71 @@ function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, 
             </div>
           ))}
         </div>
+      </CollapseCard>
+
+      {/* EXPORT & BACKUP */}
+      <CollapseCard title="Export & Backup Data" icon={Download}>
+        {(()=>{
+          const last = localStorage.getItem('km-lastBackup');
+          const days = last ? Math.floor((Date.now()-parseInt(last))/(864e5)) : null;
+          if(days===null) return <p className="text-xs font-bold text-amber-600 bg-amber-50 px-3 py-2 rounded-lg mb-4">⚠ Belum pernah backup. Disarankan backup sekarang.</p>;
+          if(days>=7) return <p className="text-xs font-bold text-red-600 bg-red-50 px-3 py-2 rounded-lg mb-4">⚠ Sudah {days} hari belum backup! Backup sekarang.</p>;
+          return <p className="text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-2 rounded-lg mb-4">✓ Terakhir backup {days===0?"hari ini":`${days} hari lalu`}.</p>;
+        })()}
+        <p className="text-sm text-slate-500 mb-4">Download semua data (penyewa, kamar, invoice, pembayaran, kas keluar) dalam format pilihan kamu. Simpan filenya di Google Drive atau email ke diri sendiri.</p>
+        <div className="flex gap-3 flex-wrap">
+          <button onClick={async()=>{
+            if(!window.XLSX){
+              await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});
+            }
+            const X=window.XLSX; const d=await exportAll();
+            const fmtRp=n=>n?Number(n).toLocaleString('id-ID'):0;
+            const wb=X.utils.book_new();
+            // Sheet Kamar
+            X.utils.book_append_sheet(wb,X.utils.json_to_sheet(d.rooms.map(r=>({'Nomor':`K-${r.nomor}`,'Lantai':`Lt ${r.lantai}`,'Tipe':r.tipe||'-','Harga/Bln':r.harga||0,'Status':r.status==='terisi'?'Terisi':'Kosong','Penyewa':d.tenants.find(t=>t.id===r.penyewaId)?.nama||'-'}))),'Kamar');
+            // Sheet Penyewa
+            X.utils.book_append_sheet(wb,X.utils.json_to_sheet(d.tenants.map(t=>{const r=d.rooms.find(x=>x.id===t.kamarId);return{'Kamar':`K-${r?.nomor||'-'}`,'Lantai':`Lt ${r?.lantai||'-'}`,'Nama':t.nama,'No HP':t.hp,'Tgl Masuk':t.tanggalMasuk||'-','Deposit':t.deposit||0,'Status':t.status==='aktif'?'Aktif':'Alumni'};})),'Penyewa');
+            // Sheet Invoice
+            X.utils.book_append_sheet(wb,X.utils.json_to_sheet(d.invoices.length?d.invoices.map(i=>{const paid=(i.invPayments||[]).reduce((s,p)=>s+(+p.amount||0),0);return{'No Invoice':i.invoiceNo,'Penyewa':i.tenantName,'Kamar':`K-${i.roomNomor}`,'Periode':i.periode?.label||'-','Jatuh Tempo':i.dueDate||'-','Nominal':i.nominal||0,'Terbayar':paid,'Sisa':Math.max(0,(i.nominal||0)-paid),'Status':i.paid||paid>=(i.nominal||0)?'Lunas':paid>0?'Sebagian':'Belum Bayar'}}):[{Info:'Belum ada invoice'}]),'Invoice');
+            // Sheet Pembayaran
+            X.utils.book_append_sheet(wb,X.utils.json_to_sheet(d.payments.length?d.payments.map(p=>({'Tanggal':p.tanggal||p.date||'-','Penyewa':p.penyewaName||'-','Kamar':`K-${d.rooms.find(r=>r.id===p.kamarId)?.nomor||'-'}`,'Periode':p.periode||'-','Nominal':p.nominal||0,'Metode':p.metode||'-','Bank':p.bank||'-','Pengirim':p.pengirim||'-'})):[{Info:'Belum ada pembayaran'}]),'Pembayaran');
+            // Sheet Kas Keluar
+            X.utils.book_append_sheet(wb,X.utils.json_to_sheet(d.expenses.length?d.expenses.map(e=>({'Tanggal':e.tanggal||'-','Kategori':e.kategori||'-','Deskripsi':e.deskripsi||'-','Nominal':e.nominal||0,'Dibayar Oleh':e.dibayarOleh||'-'})):[{Info:'Belum ada pengeluaran'}]),'Kas Keluar');
+            X.writeFile(wb,`KosMeruya-${new Date().toISOString().split('T')[0]}.xlsx`);
+            localStorage.setItem('km-lastBackup',Date.now().toString());
+          }} className="flex items-center gap-2 px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition text-sm">
+            <Download size={16}/>Export Excel
+          </button>
+          <button onClick={async()=>{
+            const d=await exportAll();
+            const now=new Date().toLocaleDateString('id-ID',{dateStyle:'full'});
+            const aktif=d.tenants.filter(t=>t.status==='aktif');
+            const unpaid=d.invoices.filter(i=>{const p=(i.invPayments||[]).reduce((s,x)=>s+(+x.amount||0),0);return !i.paid&&p<(i.nominal||0);});
+            const fRp=n=>'Rp '+Number(n||0).toLocaleString('id-ID');
+            const tRow=(cells,bold)=>`<tr>${cells.map(c=>`<t${bold?'h':'d'} style="border:1px solid #ddd;padding:6px 10px;${bold?'background:#f1f5f9;font-weight:bold;':''}">${c}</t${bold?'h':'d'}>`).join('')}</tr>`;
+            const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Laporan Kos Meruya</title><style>body{font-family:Arial,sans-serif;padding:24px;color:#1e293b}h1{color:#1e40af;margin-bottom:4px}h2{color:#475569;font-size:14px;margin:20px 0 8px}table{border-collapse:collapse;width:100%;font-size:13px;margin-bottom:16px}.summary{display:flex;gap:16px;flex-wrap:wrap;margin:16px 0}.box{background:#f8fafc;border:1px solid #e2e8f0;padding:12px 20px;border-radius:8px}.box b{display:block;font-size:20px;color:#1e40af}.label{font-size:11px;color:#64748b}@media print{button{display:none}}</style></head><body>
+            <h1>Laporan Kos Meruya</h1><p style="color:#64748b;font-size:13px">Dicetak: ${now}</p>
+            <div class="summary">
+              <div class="box"><b>${d.rooms.length}</b><span class="label">Total Kamar</span></div>
+              <div class="box"><b>${aktif.length}</b><span class="label">Penyewa Aktif</span></div>
+              <div class="box"><b>${unpaid.length}</b><span class="label">Invoice Belum Lunas</span></div>
+              <div class="box"><b>${fRp(d.payments.reduce((s,p)=>s+(+p.nominal||0),0))}</b><span class="label">Total Pemasukan</span></div>
+            </div>
+            <h2>Penyewa Aktif (${aktif.length})</h2>
+            <table><thead>${tRow(['Kamar','Nama','No HP','Tgl Masuk','Deposit'],true)}</thead><tbody>${aktif.map(t=>{const r=d.rooms.find(x=>x.id===t.kamarId);return tRow([`K-${r?.nomor||'-'}`,t.nama,t.hp,t.tanggalMasuk||'-',fRp(t.deposit)])}).join('')}</tbody></table>
+            <h2>Invoice Belum Lunas (${unpaid.length})</h2>
+            <table><thead>${tRow(['No Invoice','Penyewa','Kamar','Jatuh Tempo','Sisa'],true)}</thead><tbody>${unpaid.map(i=>{const p=(i.invPayments||[]).reduce((s,x)=>s+(+x.amount||0),0);return tRow([i.invoiceNo,i.tenantName,`K-${i.roomNomor}`,i.dueDate||'-',fRp((i.nominal||0)-p)])}).join('')}</tbody></table>
+            <h2>Pengeluaran (${d.expenses.length} total)</h2>
+            <table><thead>${tRow(['Tanggal','Kategori','Deskripsi','Nominal'],true)}</thead><tbody>${d.expenses.slice(0,30).map(e=>tRow([e.tanggal||'-',e.kategori||'-',e.deskripsi||'-',fRp(e.nominal)])).join('')}</tbody></table>
+            <br><button onclick="window.print()" style="background:#1e40af;color:white;padding:10px 24px;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:bold">🖨 Print / Save PDF</button>
+            </body></html>`;
+            const w=window.open('','_blank'); w.document.write(html); w.document.close();
+            localStorage.setItem('km-lastBackup',Date.now().toString());
+          }} className="flex items-center gap-2 px-5 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition text-sm">
+            <FileText size={16}/>Export PDF
+          </button>
+        </div>
+        <p className="text-xs text-slate-400 mt-3">Excel: 5 sheet (Kamar, Penyewa, Invoice, Pembayaran, Kas Keluar). PDF: laporan ringkas siap cetak.</p>
       </CollapseCard>
 
       {/* RESET DATA */}
@@ -3108,6 +3173,10 @@ export default function App() {
 
   const saveUsers=async(d)=>{setUsers(d);await store.set("km-users",d);};
   const saveKas=async(d)=>{setKasTx(d);await store.set(SK.K,d);};
+  const exportAll = async () => {
+    const invData = await store.get("km-invoices");
+    return { rooms, tenants, payments, expenses, kasTx, settings, invoices: toArr(invData)||[] };
+  };
   const login=(u)=>{setUser(u.id);setRole(u.role);try{localStorage.setItem("km-session",JSON.stringify({u:u.id,r:u.role}));}catch{}};
   const logout=()=>{setUser(null);setRole(null);setPage("dashboard");try{localStorage.removeItem("km-session");}catch{}};
   const addAudit=async(action,detail)=>{const e={id:Math.random().toString(36).substr(2)+Date.now().toString(36),action,detail,by:user,at:new Date().toISOString()};const na=[e,...(audit||[])].slice(0,200);setAudit(na);await store.set(SK.A,na);};
@@ -3145,7 +3214,7 @@ export default function App() {
   const myPerms = getPerms(currentUser);
   const ctx={role,user,settings,rooms,tenants,payments,expenses,audit,users,kasTx,bagiHasil,myPerms,
     saveSettings:save.settings,saveRooms:save.rooms,saveTenants:save.tenants,
-    savePayments:save.payments,saveExpenses:save.expenses,addAudit,saveUsers,saveKas,saveBagiHasil};
+    savePayments:save.payments,saveExpenses:save.expenses,addAudit,saveUsers,saveKas,saveBagiHasil,exportAll};
 
   // Invoice view
 
