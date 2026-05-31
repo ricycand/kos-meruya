@@ -210,7 +210,23 @@ function LoginScreen({ settings, users, onLogin }) {
   );
 }
 
-function Layout({ children, page, setPage, role, user, onLogout, expenses, open, setOpen, myPerms }) {
+function Layout({ children, page, setPage, role, user, onLogout, expenses, open, setOpen, myPerms, users, saveUsers, addAudit }) {
+  const [cpModal, setCpModal] = useState(false);
+  const [cpForm, setCpForm] = useState({lama:"",baru:"",konfirmasi:""});
+  const [cpErr, setCpErr] = useState("");
+
+  const doChangePass = async () => {
+    const me = (users||[]).find(u=>u.id===user);
+    if(!me) return;
+    if(me.password !== cpForm.lama) { setCpErr("Password lama salah."); return; }
+    if(cpForm.baru.length < 4) { setCpErr("Password baru minimal 4 karakter."); return; }
+    if(cpForm.baru !== cpForm.konfirmasi) { setCpErr("Konfirmasi tidak cocok."); return; }
+    const updated = (users||[]).map(u=>u.id===user?{...u,password:cpForm.baru}:u);
+    await saveUsers(updated);
+    await addAudit("GANTI_PASS", `${user} mengganti password`);
+    setCpModal(false); setCpForm({lama:"",baru:"",konfirmasi:""}); setCpErr("");
+    alert("✅ Password berhasil diganti!");
+  };
   const NAV = [
     { id:"dashboard", icon:Home,      label:"Dashboard",       roles:["admin","investor","staff"] },
     { id:"rooms",     icon:Grid,      label:"Kamar",           roles:["admin","investor","staff"] },
@@ -267,6 +283,11 @@ function Layout({ children, page, setPage, role, user, onLogout, expenses, open,
 
         <div className="p-3 border-t border-slate-700/50">
           {open && <p className="text-slate-500 text-xs px-3 pb-2 truncate">{uLabel}</p>}
+          <button onClick={()=>setCpModal(true)}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition text-sm font-medium mb-1">
+            <Shield size={16}/>
+            {open && "Ganti Password"}
+          </button>
           <button onClick={onLogout}
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-400 hover:text-red-400 hover:bg-slate-800 transition text-sm font-medium">
             <LogOut size={18}/>
@@ -274,6 +295,31 @@ function Layout({ children, page, setPage, role, user, onLogout, expenses, open,
           </button>
         </div>
       </aside>
+
+      {cpModal&&(
+        <Modal title="Ganti Password" onClose={()=>{setCpModal(false);setCpErr("");}}>
+          <div className="space-y-4">
+            <div className="bg-blue-50 rounded-xl p-3 text-sm text-blue-700 font-medium">Login: <strong>{user}</strong></div>
+            {cpErr&&<p className="text-xs font-bold text-red-500 bg-red-50 px-3 py-2 rounded-lg">{cpErr}</p>}
+            <div>
+              <label className="text-xs font-bold text-slate-600 block mb-1">Password Lama</label>
+              <input type="password" className={inp} value={cpForm.lama} onChange={e=>setCpForm({...cpForm,lama:e.target.value})} placeholder="Masukkan password lama"/>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-600 block mb-1">Password Baru</label>
+              <input type="password" className={inp} value={cpForm.baru} onChange={e=>setCpForm({...cpForm,baru:e.target.value})} placeholder="Minimal 4 karakter"/>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-600 block mb-1">Konfirmasi Password Baru</label>
+              <input type="password" className={inp} value={cpForm.konfirmasi} onChange={e=>setCpForm({...cpForm,konfirmasi:e.target.value})} placeholder="Ulangi password baru"/>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <Btn v="secondary" onClick={()=>{setCpModal(false);setCpErr("");}}>Batal</Btn>
+              <Btn onClick={doChangePass}>Simpan Password</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {/* Main */}
       <main className="flex-1 overflow-y-auto w-full">
@@ -3283,7 +3329,8 @@ export default function App() {
   // Logged in — show app
   return (
     <Layout page={page} setPage={setPage} role={role} user={user} onLogout={logout}
-            expenses={expenses} open={open} setOpen={setOpen} myPerms={myPerms}>
+            expenses={expenses} open={open} setOpen={setOpen} myPerms={myPerms}
+            users={users} saveUsers={saveUsers} addAudit={addAudit}>
       {page==="dashboard" && <Dashboard {...ctx} setPage={setPage}/>}
       {page==="rooms"     && myPerms.rooms!=="none"     && <RoomsPage {...ctx}/>}
       {page==="tenants"   && myPerms.tenants!=="none"   && <TenantsPage {...ctx}/>}
