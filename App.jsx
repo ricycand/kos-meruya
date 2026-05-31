@@ -318,6 +318,25 @@ function Dashboard({ role, user, rooms, tenants, payments, expenses, settings, s
     return today > due;
   });
 
+  // Expiring tenants (Berlaku s/d ≤ 7 hari)
+  const [tInvDash, setTInvDash] = useState([]);
+  useEffect(()=>{ store.get("km-invoices").then(d=>setTInvDash(toArr(d)||[])); },[tenants]);
+  const expiring = tenants.filter(t=>{
+    if(!t.aktif) return false;
+    const paidInvs = tInvDash.filter(i=>i.tenantId===t.id&&(i.paid||(i.invPayments||[]).reduce((s,p)=>s+(+p.amount||0),0)>=(+i.nominal||0)));
+    const dates = paidInvs.map(i=>i.periode?.end).filter(Boolean).sort();
+    const berlaku = dates[dates.length-1];
+    if(!berlaku) return false;
+    const diff = Math.ceil((new Date(berlaku)-today)/(864e5));
+    return diff<=7;
+  }).map(t=>{
+    const paidInvs = tInvDash.filter(i=>i.tenantId===t.id&&(i.paid||(i.invPayments||[]).reduce((s,p)=>s+(+p.amount||0),0)>=(+i.nominal||0)));
+    const dates = paidInvs.map(i=>i.periode?.end).filter(Boolean).sort();
+    const berlaku = dates[dates.length-1];
+    const diff = Math.ceil((new Date(berlaku)-today)/(864e5));
+    return {...t, berlaku, diff};
+  }).sort((a,b)=>a.diff-b.diff);
+
   const isInv = role==="admin"||role==="investor";
 
   const STATS = [
@@ -343,6 +362,30 @@ function Dashboard({ role, user, rooms, tenants, payments, expenses, settings, s
           </Card>
         ))}
       </div>
+
+      {expiring.length>0&&(
+        <Card className="overflow-hidden border-l-4 border-red-400">
+          <div className="px-5 py-4 flex items-center gap-2">
+            <Bell size={18} className="text-red-500"/>
+            <h2 className="font-black text-slate-900">Masa Berlaku Hampir Habis</h2>
+            <span className="text-xs font-bold bg-red-100 text-red-600 px-2 py-0.5 rounded-full">{expiring.length} penyewa</span>
+          </div>
+          <div className="px-5 pb-4 space-y-2">
+            {expiring.map(t=>{
+              const room=rooms.find(r=>r.id===t.kamarId);
+              return(
+                <div key={t.id} className={`flex items-center justify-between px-3 py-2.5 rounded-xl ${t.diff<=0?"bg-red-50":"bg-amber-50"}`}>
+                  <div>
+                    <p className="text-sm font-bold text-slate-800">{t.nama} · K-{room?.nomor||"?"}</p>
+                    <p className="text-xs text-slate-400">Berlaku s/d: <span className={`font-bold ${t.diff<=0?"text-red-600":"text-amber-600"}`}>{t.diff<=0?`Sudah habis ${Math.abs(t.diff)} hari lalu`:t.diff===0?"Hari ini":t.diff===1?"Besok":`${t.diff} hari lagi`}</span></p>
+                  </div>
+                  <button onClick={()=>setPage("invoices")} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl">Buat Invoice</button>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
 
       {isInv && (
         <Card className="p-6">
@@ -407,7 +450,7 @@ function Dashboard({ role, user, rooms, tenants, payments, expenses, settings, s
               <div key={t.id} className="flex justify-between items-center py-3 border-b border-slate-100 last:border-0">
                 <div>
                   <p className="text-sm font-bold text-slate-800">{t.nama}</p>
-                  <p className="text-xs text-slate-400">Kamar {room?.nomor} · Jatuh tempo tgl {t.jatuhTempo}</p>
+                  <p className="text-xs text-slate-400">Kamar {room?.nomor}</p>
                 </div>
                 <Badge status="telat"/>
               </div>
@@ -779,8 +822,6 @@ function TenantsPage({ role, rooms, tenants, saveTenants, saveRooms, addAudit, m
               </select></div>
             <div><label className="text-xs font-bold text-slate-600 block mb-1">Tanggal Masuk</label>
               <input type="date" className={inp} value={form.tanggalMasuk||""} onChange={e=>setForm({...form,tanggalMasuk:e.target.value})}/></div>
-            <div><label className="text-xs font-bold text-slate-600 block mb-1">Jatuh Tempo (tgl per bulan)</label>
-              <input type="number" min={1} max={28} className={inp} value={form.jatuhTempo||1} onChange={e=>setForm({...form,jatuhTempo:+e.target.value})}/></div>
             <div><label className="text-xs font-bold text-slate-600 block mb-1">Deposit (Rp)</label>
               <input type="number" className={inp} value={form.deposit||0} onChange={e=>setForm({...form,deposit:+e.target.value})}/></div>
             <div className="col-span-2"><label className="text-xs font-bold text-slate-600 block mb-1">Catatan</label>
@@ -828,7 +869,7 @@ function TenantsPage({ role, rooms, tenants, saveTenants, saveRooms, addAudit, m
                 <div><span className="text-slate-400">Kamar:</span> <span className="font-bold text-blue-600">K-{room?.nomor||"?"} (Lt {room?.lantai})</span></div>
                 <div><span className="text-slate-400">HP:</span> <span className="font-bold">{t.hp||"—"}</span></div>
                 <div><span className="text-slate-400">Masuk:</span> <span className="font-bold">{fD(t.tanggalMasuk)}</span></div>
-                <div><span className="text-slate-400">Jatuh Tempo:</span> <span className="font-bold">Tgl {t.jatuhTempo}</span></div>
+                <div><span className="text-slate-400">Tgl Masuk:</span> <span className="font-bold">{t.tanggalMasuk||"-"}</span></div>
                 <div><span className="text-slate-400">Deposit:</span> <span className="font-bold">{fRp(t.deposit)}</span></div>
                 <div><span className="text-slate-400">Berlaku s/d:</span> <span className={`font-black ${berlaku?"text-emerald-600":"text-slate-400"}`}>{berlaku?fD(berlaku):"Belum ada pembayaran"}</span></div>
                 {t.ktp&&<div className="col-span-2"><span className="text-slate-400">No KTP:</span> <span className="font-bold">{t.ktp}</span></div>}
@@ -2507,7 +2548,7 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
             <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr className="border-b border-slate-100">
-                {["Kamar","Nama","No HP","JT","Harga/Bln",""].map(h=>(
+                {["Kamar","Nama","No HP","Harga/Bln",""].map(h=>(
                   <th key={h} className="text-left px-4 py-3 text-xs font-bold text-slate-400 uppercase tracking-widest">{h}</th>
                 ))}
               </tr></thead>
@@ -2532,7 +2573,6 @@ _Manajemen ${inv.companyInfo?.name||"Kos Meruya"}_`;
                         <td className="px-4 py-3 font-black text-blue-600">K-{room?.nomor||"—"}</td>
                         <td className="px-4 py-3 font-bold text-slate-800">{t.nama}</td>
                         <td className="px-4 py-3 text-slate-500">{t.hp||"—"}</td>
-                        <td className="px-4 py-3 text-slate-500">Tgl {t.jatuhTempo}</td>
                         <td className="px-4 py-3 font-bold text-emerald-600">{fRp(room?.harga)}</td>
                         <td className="px-4 py-3">
                           <div className="flex gap-1.5">
@@ -2898,15 +2938,14 @@ function StatusBayarPage({ rooms, tenants, payments }) {
         <input className={inp+" pl-10"} placeholder="Cari nama..." value={search} onChange={e=>setSearch(e.target.value)}/></div>
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-x-auto">
         <table className="w-full text-sm">
-          <thead><tr className="border-b border-slate-100">{["Kamar","Nama","HP","JT","Status","Nominal"].map(h=><th key={h} className="text-left px-5 py-3 text-xs font-bold text-slate-400 uppercase">{h}</th>)}</tr></thead>
+          <thead><tr className="border-b border-slate-100">{["Kamar","Nama","HP","Status","Nominal"].map(h=><th key={h} className="text-left px-5 py-3 text-xs font-bold text-slate-400 uppercase">{h}</th>)}</tr></thead>
           <tbody>
-            {fil.length===0&&<tr><td colSpan={6} className="text-center py-8 text-slate-400">Tidak ada penyewa</td></tr>}
+            {fil.length===0&&<tr><td colSpan={5} className="text-center py-8 text-slate-400">Tidak ada penyewa</td></tr>}
             {fil.map(t=>{const rm=rooms.find(r=>r.id===t.kamarId);const{st,nom}=getSt(t);return(
               <tr key={t.id} className="border-b border-slate-50 hover:bg-slate-50">
                 <td className="px-5 py-3 font-black text-blue-600">K-{rm?.nomor||"?"}</td>
                 <td className="px-5 py-3 font-bold">{t.nama}</td>
                 <td className="px-5 py-3 text-slate-500 text-xs">{t.hp}</td>
-                <td className="px-5 py-3 text-slate-500">Tgl {t.jatuhTempo}</td>
                 <td className="px-5 py-3"><span className={`text-xs font-bold px-2.5 py-1 rounded-full ${st==="lunas"?"bg-emerald-100 text-emerald-700":st==="telat"?"bg-red-100 text-red-600":"bg-amber-100 text-amber-700"}`}>{st==="lunas"?"✓ Lunas":st==="telat"?"✗ Telat":"⏳ Belum"}</span></td>
                 <td className="px-5 py-3 font-bold">{nom?"Rp "+nom.toLocaleString("id-ID"):"-"}</td>
               </tr>
