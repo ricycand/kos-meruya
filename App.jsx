@@ -7,10 +7,26 @@ import {
 } from "lucide-react";
 
 const FB="https://kos-meruya-default-rtdb.asia-southeast1.firebasedatabase.app";
+const FB_KEY="AIzaSyDubp1ZVhVNEEsEKldcnnMX4fEewfyGncg";
+const FB_EMAIL="app@kosmeruya.com";
+const FB_PASS="Ry201011!";
+let _fbToken=null;
+let _fbRt=null;
+const fbAuth=async()=>{
+  const r=await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FB_KEY}`,
+    {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:FB_EMAIL,password:FB_PASS,returnSecureToken:true})});
+  if(!r.ok)throw new Error("Firebase auth gagal");
+  const d=await r.json(); _fbToken=d.idToken; _fbRt=d.refreshToken;
+};
+const fbRefresh=async()=>{
+  try{const r=await fetch(`https://securetoken.googleapis.com/v1/token?key=${FB_KEY}`,
+    {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({grant_type:"refresh_token",refresh_token:_fbRt})});
+  if(!r.ok)return;const d=await r.json();_fbToken=d.id_token;_fbRt=d.refresh_token;}catch{}
+};
 const toKey=(k)=>k.replace(/-/g,"_");
 const store={
-  get:async(k)=>{try{const r=await fetch(`${FB}/${toKey(k)}.json`);if(!r.ok)return null;const d=await r.json();if(d===null)return null;return typeof d==="string"?JSON.parse(d):d;}catch{return null;}},
-  set:async(k,v)=>{try{const r=await fetch(`${FB}/${toKey(k)}.json`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(JSON.stringify(v))});return r.ok;}catch{return false;}}
+  get:async(k)=>{try{const auth=_fbToken?`?auth=${_fbToken}`:"";const r=await fetch(`${FB}/${toKey(k)}.json${auth}`);if(!r.ok)return null;const d=await r.json();if(d===null)return null;return typeof d==="string"?JSON.parse(d):d;}catch{return null;}},
+  set:async(k,v)=>{try{const auth=_fbToken?`?auth=${_fbToken}`:"";const r=await fetch(`${FB}/${toKey(k)}.json${auth}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(JSON.stringify(v))});return r.ok;}catch{return false;}}
 };
 
 const SK={S:"km-settings",R:"km-rooms",T:"km-tenants",P:"km-payments",E:"km-expenses",A:"km-audit",K:"km-kas",BH:"km-bagihasil"};
@@ -3157,6 +3173,8 @@ export default function App() {
     }
     (async()=>{
       try{
+        await fbAuth();
+        setInterval(fbRefresh, 55*60*1000);
         const sRaw=await store.get(SK.S); const s=(sRaw&&typeof sRaw==="object")?sRaw:(typeof sRaw==="string"?JSON.parse(sRaw):null); if(s)setSettings(s);
         const rRaw=await store.get(SK.R); const r=toArr(rRaw); if(r&&r.length>0)setRooms(r); else{const nr=mkRooms();setRooms(nr);store.set(SK.R,nr);}
         const res=await Promise.allSettled([store.get(SK.T),store.get(SK.P),store.get(SK.E),store.get(SK.A),store.get("km-users"),store.get(SK.K),store.get(SK.BH)]);
