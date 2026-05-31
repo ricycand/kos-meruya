@@ -228,7 +228,7 @@ function Layout({ children, page, setPage, role, user, onLogout, expenses, open,
     alert("✅ Password berhasil diganti!");
   };
   const NAV = [
-    { id:"dashboard", icon:Home,      label:"Dashboard",       roles:["admin","investor","staff"] },
+    { id:"dashboard", icon:Home,      label:"Dashboard",       roles:["admin","investor"] },
     { id:"rooms",     icon:Grid,      label:"Kamar",           roles:["admin","investor","staff"] },
     { id:"tenants",   icon:Users,     label:"Penyewa",         roles:["admin","investor","staff"] },
     { id:"expenses",  icon:Wallet,    label:"Kas & Keluar",    roles:["admin","investor","staff"] },
@@ -3280,7 +3280,11 @@ export default function App() {
     const invData = await store.get("km-invoices");
     return { rooms, tenants, payments, expenses, kasTx, settings, invoices: toArr(invData)||[] };
   };
-  const login=(u)=>{setUser(u.id);setRole(u.role);try{localStorage.setItem("km-session",JSON.stringify({u:u.id,r:u.role}));}catch{}};
+  const login=(u)=>{
+    setUser(u.id);setRole(u.role);
+    setPage(u.role==="staff"?"tenants":"dashboard");
+    try{localStorage.setItem("km-session",JSON.stringify({u:u.id,r:u.role}));}catch{}
+  };
   const logout=()=>{setUser(null);setRole(null);setPage("dashboard");try{localStorage.removeItem("km-session");}catch{}};
   const addAudit=async(action,detail)=>{const e={id:Math.random().toString(36).substr(2)+Date.now().toString(36),action,detail,by:user,at:new Date().toISOString()};const na=[e,...(audit||[])].slice(0,200);setAudit(na);await store.set(SK.A,na);};
 
@@ -3342,7 +3346,7 @@ export default function App() {
     <Layout page={page} setPage={setPage} role={role} user={user} onLogout={logout}
             expenses={expenses} open={open} setOpen={setOpen} myPerms={myPerms}
             users={users} saveUsers={saveUsers} addAudit={addAudit}>
-      {page==="dashboard" && <Dashboard {...ctx} setPage={setPage}/>}
+      {page==="dashboard" && role!=="staff" && <Dashboard {...ctx} setPage={setPage}/>}
       {page==="rooms"     && myPerms.rooms!=="none"     && <RoomsPage {...ctx}/>}
       {page==="tenants"   && myPerms.tenants!=="none"   && <TenantsPage {...ctx}/>}
       {page==="expenses"  && myPerms.expenses!=="none"  && <ExpensesPage {...ctx}/>}
