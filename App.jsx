@@ -26,7 +26,7 @@ const fbRefresh=async()=>{
 const toKey=(k)=>k.replace(/-/g,"_");
 const store={
   get:async(k)=>{try{const auth=_fbToken?`?auth=${_fbToken}`:"";const r=await fetch(`${FB}/${toKey(k)}.json${auth}`);if(!r.ok)return null;const d=await r.json();if(d===null)return null;return typeof d==="string"?JSON.parse(d):d;}catch{return null;}},
-  set:async(k,v)=>{try{const auth=_fbToken?`?auth=${_fbToken}`:"";const r=await fetch(`${FB}/${toKey(k)}.json${auth}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(JSON.stringify(v))});return r.ok;}catch{return false;}}
+  set:async(k,v)=>{try{const auth=_fbToken?`?auth=${_fbToken}`:"";if(v===null){const r=await fetch(`${FB}/${toKey(k)}.json${auth}`,{method:"DELETE"});return r.ok;}const r=await fetch(`${FB}/${toKey(k)}.json${auth}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(JSON.stringify(v))});return r.ok;}catch{return false;}}
 };
 
 const SK={S:"km-settings",R:"km-rooms",T:"km-tenants",P:"km-payments",E:"km-expenses",A:"km-audit",K:"km-kas",BH:"km-bagihasil"};
@@ -3292,22 +3292,33 @@ export default function App() {
     expenses:async(d)=>{setExpenses(d);await store.set(SK.E,d);},
   };
 
-  const resetData=async(key)=>{await store.set(key,"null");};
+  const resetData=async(key)=>{
+    const doReset=async(fbKey,stateFn)=>{await store.set(fbKey,null);stateFn();};
+    if(key==="payments")  await doReset(SK.P,()=>setPayments([]));
+    if(key==="expenses")  await doReset(SK.E,()=>setExpenses([]));
+    if(key==="audit")     await doReset(SK.A,()=>setAudit([]));
+    if(key==="tenants"){
+      await store.set(SK.T,null); setTenants([]);
+      await store.set("km-invoices",null);
+      const cr=rooms.map(r=>({...r,status:"kosong",penyewaId:null}));
+      await store.set(SK.R,cr); setRooms(cr);
+    }
+    if(key==="all"){
+      await Promise.all([SK.T,SK.P,SK.E,SK.A,SK.K,SK.BH,"km-invoices"].map(k=>store.set(k,null)));
+      const cr=rooms.map(r=>({...r,status:"kosong",penyewaId:null}));
+      await store.set(SK.R,cr);
+      setRooms(cr);setTenants([]);setPayments([]);setExpenses([]);setAudit([]);setKasTx([]);setBagiHasil([]);
+      alert("✅ Semua data berhasil dihapus!");
+    }
+  };
 
   const resetAll=async(what)=>{
     if(what==="penyewa"){
-      // Reset tenants + rooms (set all kosong) + payments + invoices
       if(!confirm("Reset semua data penyewa, pembayaran, dan invoice?\n\nData yang dihapus TIDAK bisa dikembalikan!")) return;
-      await store.set(SK.T,"null");
-      await store.set(SK.P,"null");
-      await store.set(SK.E,"null");
-      await store.set("km-invoices","null");
-      await store.set(SK.A,"null");
-      await store.set(SK.K,"null");
-      // Reset all rooms to kosong
-      const cleanRooms = rooms.map(r=>({...r,status:"kosong",penyewaId:null}));
-      await store.set(SK.R, cleanRooms);
-      setRooms(cleanRooms); setTenants([]); setPayments([]); setExpenses([]); setAudit([]); setKasTx([]);
+      await Promise.all([SK.T,SK.P,SK.E,"km-invoices",SK.A,SK.K].map(k=>store.set(k,null)));
+      const cr=rooms.map(r=>({...r,status:"kosong",penyewaId:null}));
+      await store.set(SK.R,cr);
+      setRooms(cr);setTenants([]);setPayments([]);setExpenses([]);setAudit([]);setKasTx([]);
       alert("✅ Semua data berhasil direset! Web sekarang seperti baru.");
     }
   };
