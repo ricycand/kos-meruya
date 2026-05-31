@@ -1859,17 +1859,17 @@ function SettingsPage({ settings, saveSettings, addAudit, user, onReset, rooms, 
         <p className="text-sm text-slate-500 mb-4">Atur akun login untuk investor dan staff. Total: {(users||[]).length} pengguna.</p>
         <div className="space-y-2">
           {(users||[]).map(u=>(
-            <div key={u.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition">
-              <div className="flex items-center gap-3">
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-white text-sm ${u.role==="admin"?"bg-purple-600":u.role==="investor"?"bg-blue-600":"bg-slate-500"}`}>
+            <div key={u.id} className="p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition">
+              <div className="flex items-center gap-3 mb-2.5">
+                <div className={`w-9 h-9 flex-shrink-0 rounded-xl flex items-center justify-center font-black text-white text-sm ${u.role==="admin"?"bg-purple-600":u.role==="investor"?"bg-blue-600":"bg-slate-500"}`}>
                   {u.nama?.[0]?.toUpperCase()||"?"}
                 </div>
-                <div>
-                  <p className="font-bold text-slate-900 text-sm">{u.nama}</p>
+                <div className="min-w-0">
+                  <p className="font-bold text-slate-900 text-sm truncate">{u.nama}</p>
                   <p className="text-xs text-slate-500">ID: <span className="font-mono">{u.id}</span> · {u.role}</p>
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 <button onClick={()=>{
                   const nama=prompt("Nama:",u.nama);if(!nama)return;
                   const password=prompt("Password baru (kosongkan jika tidak ganti):");
